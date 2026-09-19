@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "plugins" / "dsh-cli-session" / "scripts" / "dsh_mcp_server.py"
 
 MODEL_VISIBLE_SURFACES = [
+    ROOT / "plugins" / "dsh-cli-session" / "skills" / "dsh-cli-session" / "SKILL.md",
+    ROOT / "plugins" / "dsh-cli-session" / "skills" / "dsh-cli-session" / "agents" / "openai.yaml",
     ROOT / "plugins" / "dsh-cli-session" / ".codex-plugin" / "plugin.json",
     ROOT / "plugins" / "dsh-cli-session" / ".mcp.json",
 ]

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "plugins" / "dsh-cli-session" / "scripts" / "dsh_runtime"
+SCRIPTS = ROOT / "plugins" / "dsh-cli-session" / "skills" / "dsh-cli-session" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from dsh_transport import DshError, DshTransportError
