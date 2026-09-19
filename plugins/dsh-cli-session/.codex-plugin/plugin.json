@@ -1,8 +1,8 @@
 {
   "name": "dsh-cli-session",
-  "version": "0.2.1",
+  "version": "1.0.0",
   "repository": "https://github.com/ShehabYahya/dsh-cli-session",
-  "description": "Access a live local DeepSeek Harness session with correlated prompts, incremental finalized output, and bounded evidence reads.",
+  "description": "A durable, resumable MCP bridge to a live local DeepSeek Harness session with correlated prompts, incremental finalized output, and bounded evidence reads.",
   "author": {
     "name": "ShehabYahya"
   },
@@ -11,15 +11,17 @@
     "deepseek",
     "harness",
     "dsh",
+    "codex",
+    "mcp",
+    "agent",
     "local",
-    "session",
-    "mcp"
+    "session"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "DSH CLI Session",
-    "shortDescription": "Access local DSH sessions through bounded MCP tools.",
-    "longDescription": "DSH CLI Session provides loopback-only tools for session discovery, durable prompt correlation, incremental finalized output, compact lifecycle state, and bounded evidence reads over an already-running DeepSeek Harness web session.",
+    "shortDescription": "Durable, resumable access to a live local DSH session.",
+    "longDescription": "Connect Codex to an already-running DeepSeek Harness session through exact assignment correlation, incremental finalized output, compact lifecycle state, resumable cursors, and bounded evidence reads.",
     "developerName": "ShehabYahya",
     "category": "Developer Tools",
     "capabilities": [
