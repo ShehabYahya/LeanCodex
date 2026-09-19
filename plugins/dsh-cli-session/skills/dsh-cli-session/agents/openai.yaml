@@ -1,4 +1,4 @@
 interface:
   display_name: "DSH CLI Session"
-  short_description: "Prompt a live local DSH session through its CLI API"
-  default_prompt: "Use $dsh-cli-session to send a prompt through the live local DSH server."
+  short_description: "Delegate implementation to DSH and supervise its outward results"
+  default_prompt: "Use $dsh-cli-session in supervisor mode: delegate bounded work to my live DSH session, wait on its output cursor, and review results without duplicating implementation or broad reads."
