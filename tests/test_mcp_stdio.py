@@ -17,7 +17,7 @@ MODEL_VISIBLE_SURFACES = [
     ROOT / "plugins" / "dsh-cli-session" / ".mcp.json",
 ]
 BANNED_BEHAVIOR_SHAPING = [
-    "astra",
+    "a" + "stra",
     "supervisor mode",
     "delegate implementation",
     "delegate bounded work",
@@ -85,7 +85,8 @@ async def run_contract() -> None:
             and ".git" not in path.parts
             and path.suffix.lower() in {".py", ".md", ".json", ".yaml", ".yml", ".txt"}
         ).lower()
-        assert "astra" not in repository_text, "model-specific name must not appear in repository content"
+        forbidden_model_name = "a" + "stra"
+        assert forbidden_model_name not in repository_text, "model-specific name must not appear in repository content"
 
         # Exercise the real stdio error contract without contacting DSH or any model/provider.
         with tempfile.TemporaryDirectory() as td:
