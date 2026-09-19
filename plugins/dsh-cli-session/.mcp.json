@@ -2,7 +2,7 @@
   "mcpServers": {
     "dshCliSession": {
       "title": "DSH CLI Session",
-      "description": "Inspect and prompt an already-running local DeepSeek Harness session.",
+      "description": "Delegate bounded work to an already-running local DeepSeek Harness session and supervise finalized outward output.",
       "cwd": ".",
       "command": "python3",
       "args": [

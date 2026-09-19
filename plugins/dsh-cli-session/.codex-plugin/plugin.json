@@ -1,10 +1,10 @@
 {
   "name": "dsh-cli-session",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "repository": "https://github.com/ShehabYahya/dsh-cli-session",
-  "description": "Safely inspect and prompt an already-running local DeepSeek Harness session.",
+  "description": "Delegate implementation to a live local DeepSeek Harness session and supervise finalized outward output through bounded cursors.",
   "author": {
-    "name": "Local developer"
+    "name": "ShehabYahya"
   },
   "license": "Proprietary",
   "keywords": [
@@ -12,14 +12,16 @@
     "harness",
     "dsh",
     "local",
-    "session"
+    "session",
+    "orchestration",
+    "supervision"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "DSH CLI Session",
-    "shortDescription": "Inspect and prompt a live local DSH session.",
-    "longDescription": "DSH CLI Session provides a small, loopback-only tool surface for listing sessions, inspecting a selected session, and queueing or steering a prompt through an already-running DeepSeek Harness web session.",
-    "developerName": "Local developer",
+    "shortDescription": "Delegate to DSH and supervise output without duplicating worker work.",
+    "longDescription": "DSH CLI Session provides a loopback-only supervisory interface for stable assignment admission, output-only incremental waiting, compact lifecycle inspection, and bounded evidence reads over an already-running DeepSeek Harness web session.",
+    "developerName": "ShehabYahya",
     "category": "Developer Tools",
     "capabilities": [
       "Interactive",
@@ -27,9 +29,9 @@
       "Write"
     ],
     "defaultPrompt": [
-      "List the running local DSH sessions",
-      "Inspect a specific DSH session",
-      "Queue this prompt in my DSH session"
+      "List my running local DSH sessions",
+      "Delegate this implementation to DSH and supervise the result",
+      "Wait for the next finalized output from this DSH assignment"
     ],
     "brandColor": "#4F46E5"
   },
