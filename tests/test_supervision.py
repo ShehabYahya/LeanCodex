@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -18,8 +19,11 @@ from dsh_store import (
     encode_cursor,
     get_assignment,
     initial_cursor,
+    load_store,
     prepare_assignment,
+    save_store,
     update_assignment,
+    MAX_ASSIGNMENTS,
 )
 from dsh_wait import wait_output
 from dsh_discovery import paginate_sessions
@@ -461,14 +465,17 @@ class SupervisionTests(unittest.TestCase):
             assignment, _ = prepare_assignment(home, client.rows[0], "task", "queue", "readonly-key")
             assignment = admit_assignment(client, home, assignment, "task")
             prompts_before = len(client.prompt_requests)
+            calls_before = len(client.calls)
             result = wait_output(
                 client, home, assignment["assignmentId"], initial_cursor(client.secret, assignment), timeout_s=0
             )
             self.assertEqual(result["outcome"], "timeout")
             self.assertTrue(result["timedOut"])
             self.assertEqual(len(client.prompt_requests), prompts_before)
-            self.assertTrue(set(client.calls[prompts_before:]).issubset({"session/list", "session/page", "session/prompt"}))
-            self.assertNotIn("session/cancel", client.calls)
+            read_calls = client.calls[calls_before:]
+            self.assertTrue(set(read_calls).issubset({"session/list", "session/page"}))
+            self.assertNotIn("session/prompt", read_calls)
+            self.assertNotIn("session/cancel", read_calls)
 
     def test_compaction_markers_and_restart_do_not_break_raw_sequence_resume(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -569,6 +576,46 @@ class SupervisionTests(unittest.TestCase):
             self.assertIn("done", json.dumps(final))
             self.assertTrue(final["terminal"])
             self.assertEqual(len(client.prompt_requests), 1)
+
+    def test_assignment_store_prunes_old_terminal_state_but_keeps_active_work(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            active, _ = prepare_assignment(home, row(seq=0), "active", "queue", "active-retention-key")
+            store = load_store(home)
+            for index in range(MAX_ASSIGNMENTS + 20):
+                assignment_id = f"old-terminal-{index}"
+                submission_key = f"old-key-{index}"
+                store["assignments"][assignment_id] = {
+                    "version": 1,
+                    "assignmentId": assignment_id,
+                    "sessionId": "s1",
+                    "payloadHash": "deadbeef",
+                    "submissionKeyHash": hashlib.sha256(submission_key.encode("utf-8")).hexdigest(),
+                    "nativeRequestId": f"request-{index}",
+                    "mode": "queue",
+                    "createdAt": 0,
+                    "updatedAt": 0,
+                    "admissionState": "accepted",
+                    "initialSeq": 0,
+                    "cwd": "/tmp/project",
+                    "claimSeq": 1,
+                    "turn": 1,
+                    "terminalSeq": 2,
+                    "terminalReason": "completed",
+                    "state": "completed",
+                }
+                slot = hashlib.sha256(submission_key.encode("utf-8")).hexdigest()
+                store["submissionKeys"][slot] = assignment_id
+            save_store(home, store)
+
+            fresh, created = prepare_assignment(home, row(seq=0), "fresh", "queue", "fresh-retention-key")
+            self.assertTrue(created)
+            retained = load_store(home)
+            self.assertIn(active["assignmentId"], retained["assignments"])
+            self.assertIn(fresh["assignmentId"], retained["assignments"])
+            self.assertLessEqual(len(retained["assignments"]), MAX_ASSIGNMENTS)
+            self.assertFalse(any(key.startswith("old-terminal-") for key in retained["assignments"]))
+
 
 
 if __name__ == "__main__":
