@@ -101,7 +101,9 @@ class WaitOutputResult(TypedDict):
     sessionId: str
     state: str | None
     admissionState: str | None
+    kind: Literal["waiting_for_input", "time_limit"]
     outcome: Literal["output", "state_change", "timeout", "gap", "unavailable"]
+    state_change: dict[str, Any]
     terminalObserved: bool
     terminal: bool
     terminalReason: str | None
@@ -110,6 +112,8 @@ class WaitOutputResult(TypedDict):
     cursor: str
     hasMore: bool
     timedOut: bool
+    timeout: dict[str, Any]
+    unavailable: dict[str, Any] | None
     observation: NotRequired[dict[str, Any]]
 
 
@@ -271,13 +275,13 @@ def dsh_send_prompt(
     prompt: str,
     session_id: str | None = None,
     cwd: str | None = None,
-    mode: Literal["queue", "steer"] = "queue",
+    mode: Literal["queue", "steer"] = "steer",
     submission_key: str | None = None,
     wait_seconds: int = 0,
     base_url: str = "http://127.0.0.1:3080",
     dsh_home: str | None = None,
 ) -> SendPromptResult:
-    """Send a prompt to one DSH session with durable request correlation; queue is the default."""
+    """Send a prompt to one DSH session with durable request correlation; steer is the default."""
     if not prompt.strip():
         raise ToolError("prompt text is required")
     if wait_seconds < 0:
@@ -344,6 +348,7 @@ def dsh_send_prompt(
 async def dsh_wait_output(
     assignment_id: str,
     after_cursor: str | None = None,
+    kind: Literal["waiting_for_input", "time_limit"] = "time_limit",
     timeout_s: int = 30,
     max_items: int = 8,
     max_message_chars: int = 6000,
@@ -351,7 +356,7 @@ async def dsh_wait_output(
     base_url: str = "http://127.0.0.1:3080",
     dsh_home: str | None = None,
 ) -> WaitOutputResult:
-    """Wait for new finalized DSH output or lifecycle events for an assignment. This tool is read-only."""
+    """Wait using one explicit policy while returning common state/terminal/timeout signals."""
     try:
         client, home = _client(base_url, dsh_home)
         return await asyncio.to_thread(
@@ -364,6 +369,7 @@ async def dsh_wait_output(
             max_items,
             max_message_chars,
             max_batch_chars,
+            kind,
         )
     except _CLIENT.DshError as exc:
         _raise(exc)

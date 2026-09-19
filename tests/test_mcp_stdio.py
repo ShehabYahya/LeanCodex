@@ -54,14 +54,19 @@ async def run_contract() -> None:
 
         wait = tools["dsh_wait_output"]
         wait_props = wait.input_schema.get("properties", {})
-        assert {"assignment_id", "after_cursor", "timeout_s", "max_items"} <= set(wait_props)
+        assert {"assignment_id", "after_cursor", "kind", "timeout_s", "max_items"} <= set(wait_props)
+        assert wait_props["kind"].get("default") == "time_limit"
+        assert set(wait_props["kind"].get("enum", [])) == {"waiting_for_input", "time_limit"}
         send_props = tools["dsh_send_prompt"].input_schema.get("properties", {})
         assert "submission_key" in send_props
-        assert send_props["mode"].get("default") == "queue"
+        assert send_props["mode"].get("default") == "steer"
 
         wait_output_schema = wait.output_schema or {}
         wait_output_props = wait_output_schema.get("properties", {})
-        assert {"assignmentId", "outcome", "items", "cursor", "terminal"} <= set(wait_output_props)
+        assert {
+            "assignmentId", "kind", "outcome", "items", "cursor", "terminal",
+            "state_change", "timeout", "unavailable",
+        } <= set(wait_output_props)
         list_output_schema = tools["dsh_list_sessions"].output_schema or {}
         assert {"sessions", "count", "nextCursor", "hasMore"} <= set(list_output_schema.get("properties", {}))
         send_output_schema = tools["dsh_send_prompt"].output_schema or {}

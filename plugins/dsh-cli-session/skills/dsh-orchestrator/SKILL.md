@@ -30,11 +30,11 @@ The worker should return the outcome, changed files, checks actually run and the
 
 Read the available `dsh-cli-session` skill once for the transport contract. Use its MCP tools. Select and verify the intended session and working directory before sending; name an alternate target directory explicitly if an existing session is used for another workspace. Do not guess among ambiguous sessions or create a new one merely because a worker is quiet.
 
-Keep the session ID, assignment ID, submission key, and latest cursor with the assignment. Use `queue` for ordinary work. Use `steer` for an authorized change to active work, including an explicit user redirection; do not steer just to hurry the worker.
+Keep the session ID, assignment ID, submission key, and latest cursor with the assignment. Use `steer` for ordinary prompts so Codex input reaches the active turn. Use `queue` explicitly when work must wait for the next turn; do not steer merely to hurry the worker when the requested delivery is intentionally deferred.
 
 Admission is not completion. For an ambiguous send, inspect the same assignment or retry the identical payload with the same submission key. Never create a new logical submission to retry an uncertain one.
 
-Wait with `dsh_wait_output` and the latest cursor, normally in 30–60 second intervals with compact output bounds. Drain `hasMore` output using the returned cursor. A watch timeout, provider retry, or quiet interval alone does not mean the worker failed. Continue observing the same assignment. Investigate a reported failure, missing observation, or concrete evidence of a stall without blindly resending the work.
+Wait with `dsh_wait_output(kind="time_limit", timeout_s=...)` and the latest cursor, normally in 30–60 second intervals with compact output bounds. Use `kind="waiting_for_input"` when the worker is expected to ask for approval or another answer. Inspect the returned `state_change`, `terminal`, `timeout`, and `unavailable` fields; drain `hasMore` output using the returned cursor. A watch timeout, provider retry, or quiet interval alone does not mean the worker failed. Continue observing the same assignment. Investigate a reported failure, missing observation, or concrete evidence of a stall without blindly resending the work.
 
 While waiting, do only useful independent work already within scope. If there is none, wait. Do not invent audits, repeat the worker's implementation, or send reminders that become duplicate assignments. Keep the user informed of meaningful progress and required decisions.
 

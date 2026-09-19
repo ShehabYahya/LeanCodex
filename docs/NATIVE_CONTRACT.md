@@ -18,6 +18,8 @@ DSH exposes:
 
 The Python plugin uses unary `session/list` + `session/page` polling for its compatibility path so it does not add a WebSocket dependency to the MCP process. It reconstructs the contiguous durable suffix after the signed cursor and returns an explicit gap/unavailable outcome when continuity cannot be proven. Unsolicited push into the MCP client or model is not claimed.
 
+The MCP wait surface has two policies, `waiting_for_input` and `time_limit`. Both return the common `state_change`, `terminal`, `timeout`, and `unavailable` fields. A finalized assistant message by itself is not a notification condition for an explicit wait; the existing signed cursor is advanced only when a notification is returned, so ordinary output remains replayable until it can be delivered with that notification.
+
 ## Finalized output projection
 
 Canonical finalized model output is the durable `assistant/message` event. Its `data.message.content` is merge-extensible and currently includes blocks such as:

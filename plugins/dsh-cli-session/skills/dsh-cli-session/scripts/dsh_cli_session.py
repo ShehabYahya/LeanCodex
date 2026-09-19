@@ -45,7 +45,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--list", action="store_true", help="list sessions and exit")
     p.add_argument("--session-id", help="exact session id; required when selection is ambiguous")
     p.add_argument("--cwd", help="when auto-selecting, require this session cwd")
-    p.add_argument("--mode", choices=("queue", "steer"), default="queue")
+    p.add_argument("--mode", choices=("queue", "steer"), default="steer")
     p.add_argument("--submission-key", help="stable caller retry key")
     p.add_argument("--wait", type=int, default=0, metavar="SECONDS", help="wait for the assignment terminal state")
     p.add_argument("--base-url", default="http://127.0.0.1:3080")

@@ -242,6 +242,68 @@ class SupervisionTests(unittest.TestCase):
             self.assertEqual(result["observation"]["state"], "unavailable")
             self.assertEqual(result["outcome"], "unavailable")
             self.assertEqual(result["cursor"], cursor)
+            self.assertEqual(result["kind"], "time_limit")
+            self.assertEqual(result["timeout"], {"limitSeconds": 0, "occurred": False})
+            self.assertEqual(result["unavailable"]["state"], "unavailable")
+
+    def test_explicit_time_limit_leaves_output_cursor_replayable_until_notification(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            target = row(seq=0)
+            assignment, _ = prepare_assignment(home, target, "task", "queue", "notify-key")
+            request_id = assignment["nativeRequestId"]
+            client = FakeClient([target], [
+                event(1, "turn/start", {"turn": 1}),
+                user(2, request_id),
+                assistant(3, 1, [{"type": "text", "text": "first"}]),
+            ])
+            assignment = admit_assignment(client, home, assignment, "task")
+            cursor = initial_cursor(client.secret, assignment)
+            first = wait_output(client, home, assignment["assignmentId"], cursor, timeout_s=0)
+            cursor = first["cursor"]
+
+            client.events.append(assistant(4, 1, [{"type": "text", "text": "quiet progress"}]))
+            quiet = wait_output(
+                client, home, assignment["assignmentId"], cursor,
+                timeout_s=0, kind="time_limit",
+            )
+            self.assertEqual(quiet["outcome"], "timeout")
+            self.assertTrue(quiet["timedOut"])
+            self.assertEqual(quiet["items"], [])
+            self.assertEqual(quiet["cursor"], cursor)
+
+            client.events.append(event(5, "turn/end", {"turn": 1, "reason": {"kind": "completed"}}))
+            final = wait_output(
+                client, home, assignment["assignmentId"], cursor,
+                timeout_s=0, kind="time_limit",
+            )
+            self.assertTrue(final["terminal"])
+            self.assertIn("quiet progress", json.dumps(final))
+            self.assertEqual(final["kind"], "time_limit")
+            self.assertTrue(final["state_change"]["changed"])
+
+    def test_waiting_for_input_uses_same_notification_envelope(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            target = row(seq=0)
+            assignment, _ = prepare_assignment(home, target, "task", "queue", "input-key")
+            request_id = assignment["nativeRequestId"]
+            client = FakeClient([target], [
+                event(1, "turn/start", {"turn": 1}),
+                user(2, request_id),
+                event(3, "approval/asked", {"id": "ask-1", "toolName": "bash"}),
+            ])
+            assignment = admit_assignment(client, home, assignment, "task")
+            result = wait_output(
+                client, home, assignment["assignmentId"], initial_cursor(client.secret, assignment),
+                timeout_s=0, kind="waiting_for_input",
+            )
+            self.assertEqual(result["kind"], "waiting_for_input")
+            self.assertEqual(result["state"], "waiting_for_input")
+            self.assertTrue(result["state_change"]["changed"])
+            self.assertEqual(result["timeout"], {"limitSeconds": 0, "occurred": False})
+            self.assertIsNone(result["unavailable"])
+            self.assertIn("waiting_for_input", [item["kind"] for item in result["items"]])
 
     def test_message_and_artifact_evidence_are_assignment_owned_and_bounded(self) -> None:
         with tempfile.TemporaryDirectory() as td:

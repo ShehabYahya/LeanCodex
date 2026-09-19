@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from dsh_transport import DshClient, DshError, _inbox_has_request, choose_session, projection_seq, sessions
 from dsh_store import decode_cursor, encode_cursor, get_assignment, initial_cursor, update_assignment
@@ -30,6 +30,8 @@ MAX_MESSAGE_CHARS = 20000
 DEFAULT_MAX_BATCH_CHARS = 12000
 MAX_BATCH_CHARS = 50000
 
+WAIT_KINDS = {"waiting_for_input", "time_limit"}
+
 _TERMINAL_STATES = {"completed", "cancelled", "blocked", "failed", "rejected"}
 
 
@@ -38,6 +40,7 @@ def _validate_wait(
     max_items: int,
     max_message_chars: int,
     max_batch_chars: int,
+    kind: str | None = None,
 ) -> None:
     if not isinstance(timeout_s, int) or timeout_s < 0 or timeout_s > MAX_WAIT_TIMEOUT:
         raise DshError(f"timeout_s must be between 0 and {MAX_WAIT_TIMEOUT}")
@@ -47,6 +50,8 @@ def _validate_wait(
         raise DshError(f"max_message_chars must be between 1 and {MAX_MESSAGE_CHARS}")
     if not isinstance(max_batch_chars, int) or max_batch_chars < 256 or max_batch_chars > MAX_BATCH_CHARS:
         raise DshError(f"max_batch_chars must be between 256 and {MAX_BATCH_CHARS}")
+    if kind is not None and kind not in WAIT_KINDS:
+        raise DshError(f"kind must be one of {sorted(WAIT_KINDS)}")
 
 
 def _assignment_view(assignment: dict[str, Any], item: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -189,6 +194,10 @@ def _result(
     cursor: str,
     timed_out: bool,
     has_more: bool,
+    wait_kind: str = "time_limit",
+    timeout_s: int = DEFAULT_WAIT_TIMEOUT,
+    state_changed: bool = False,
+    previous_state: str | None = None,
     observation: dict[str, Any] | None = None,
     outcome: str | None = None,
 ) -> dict[str, Any]:
@@ -221,7 +230,13 @@ def _result(
         "sessionId": assignment["sessionId"],
         "state": assignment.get("state"),
         "admissionState": assignment.get("admissionState"),
+        "kind": wait_kind,
         "outcome": outcome,
+        "state_change": {
+            "changed": state_changed,
+            "from": previous_state,
+            "to": assignment.get("state"),
+        },
         "terminalObserved": terminal_observed,
         "terminal": terminal_delivered,
         "terminalReason": assignment.get("terminalReason"),
@@ -230,6 +245,8 @@ def _result(
         "cursor": cursor,
         "hasMore": has_more,
         "timedOut": timed_out,
+        "timeout": {"limitSeconds": timeout_s, "occurred": timed_out},
+        "unavailable": observation if observation is not None and observation.get("state") == "unavailable" else None,
         **({"observation": observation} if observation is not None else {}),
     }
 
@@ -243,23 +260,37 @@ def wait_output(
     max_items: int = DEFAULT_MAX_BATCH_ITEMS,
     max_message_chars: int = DEFAULT_MAX_MESSAGE_CHARS,
     max_batch_chars: int = DEFAULT_MAX_BATCH_CHARS,
+    kind: Literal["waiting_for_input", "time_limit"] | None = None,
 ) -> dict[str, Any]:
-    _validate_wait(timeout_s, max_items, max_message_chars, max_batch_chars)
+    # ``None`` preserves the pre-notification behavior for the internal legacy
+    # helper. The MCP surface always supplies one of the two explicit policies.
+    legacy_immediate = kind is None
+    wait_kind = kind or "time_limit"
+    _validate_wait(timeout_s, max_items, max_message_chars, max_batch_chars, kind)
     assignment = get_assignment(dsh_home, assignment_id)
     token = after_cursor or initial_cursor(client.secret, assignment)
     after_seq, partial = decode_cursor(client.secret, token, assignment)
+    previous_state = assignment.get("state") if isinstance(assignment.get("state"), str) else None
+    state_change_seen = False
+    last_state = previous_state
     deadline = time.monotonic() + timeout_s
     # timeout_s=0 means one non-waiting observation, not an unbounded upstream RPC.
     observation_deadline = deadline if timeout_s > 0 else time.monotonic() + 1.0
 
     while True:
         try:
+            state_before_reconcile = assignment.get("state")
             assignment, item = reconcile_assignment_state(
                 client,
                 dsh_home,
                 assignment,
                 deadline=observation_deadline,
             )
+            if assignment.get("state") != state_before_reconcile:
+                state_change_seen = True
+            if assignment.get("state") != last_state:
+                state_change_seen = True
+                last_state = assignment.get("state")
         except DshError as exc:
             # Observation failure is not assignment failure. Keep the same signed cursor.
             if timeout_s == 0 or time.monotonic() >= deadline:
@@ -271,6 +302,10 @@ def wait_output(
                     cursor=token,
                     timed_out=False,
                     has_more=False,
+                    wait_kind=wait_kind,
+                    timeout_s=timeout_s,
+                    state_changed=state_change_seen,
+                    previous_state=previous_state,
                     observation={"state": "unavailable", "error": str(exc)},
                 )
             time.sleep(min(0.4, max(0.01, deadline - time.monotonic())))
@@ -286,6 +321,10 @@ def wait_output(
                 cursor=token,
                 timed_out=False,
                 has_more=False,
+                wait_kind=wait_kind,
+                timeout_s=timeout_s,
+                state_changed=state_change_seen,
+                previous_state=previous_state,
                 observation={
                     "state": "gap",
                     "error": f"supervision cursor seq {after_seq} is ahead of current session cursor {head}",
@@ -299,31 +338,63 @@ def wait_output(
                     after_seq,
                     deadline=observation_deadline,
                 )
-                items, cursor_after, cursor_partial, has_more = reduce_events(
-                    client,
-                    dsh_home,
-                    assignment,
-                    events,
-                    after_seq,
-                    partial,
-                    max_items=max_items,
-                    max_message_chars=max_message_chars,
-                    max_batch_chars=max_batch_chars,
-                    deadline=observation_deadline,
+                notification_ready = (
+                    legacy_immediate
+                    or (not legacy_immediate and wait_kind == "time_limit" and state_change_seen)
+                    or (not legacy_immediate and wait_kind == "waiting_for_input" and assignment.get("state") == "waiting_for_input")
                 )
-                assignment = get_assignment(dsh_home, assignment_id)
-                token = encode_cursor(client.secret, assignment, cursor_after, cursor_partial)
-                after_seq, partial = cursor_after, cursor_partial
-                if items or has_more:
-                    return _result(
+                if not legacy_immediate:
+                    claim_seq = assignment.get("claimSeq")
+                    active_turn = assignment.get("turn")
+                    for event in events:
+                        seq = event.get("seq")
+                        if not isinstance(seq, int):
+                            continue
+                        if isinstance(claim_seq, int) and seq < claim_seq:
+                            continue
+                        event_turn = _turn_from_data(event)
+                        if isinstance(active_turn, int) and isinstance(event_turn, int) and event_turn != active_turn:
+                            continue
+                        event_type = event.get("type")
+                        if event_type in {"llm/retry", "llm/retry-started", "approval/asked", "approval/decided", "turn/end"}:
+                            state_change_seen = True
+                            notification_ready = True
+                        if wait_kind == "waiting_for_input" and event_type == "approval/asked":
+                            notification_ready = True
+
+                if notification_ready:
+                    items, cursor_after, cursor_partial, has_more = reduce_events(
                         client,
                         dsh_home,
                         assignment,
-                        items=items,
-                        cursor=token,
-                        timed_out=False,
-                        has_more=has_more,
+                        events,
+                        after_seq,
+                        partial,
+                        max_items=max_items,
+                        max_message_chars=max_message_chars,
+                        max_batch_chars=max_batch_chars,
+                        deadline=observation_deadline,
                     )
+                    assignment = get_assignment(dsh_home, assignment_id)
+                    if assignment.get("state") != last_state:
+                        state_change_seen = True
+                        last_state = assignment.get("state")
+                    token = encode_cursor(client.secret, assignment, cursor_after, cursor_partial)
+                    after_seq, partial = cursor_after, cursor_partial
+                    if legacy_immediate or items or has_more or state_change_seen:
+                        return _result(
+                            client,
+                            dsh_home,
+                            assignment,
+                            items=items,
+                            cursor=token,
+                            timed_out=False,
+                            has_more=has_more,
+                            wait_kind=wait_kind,
+                            timeout_s=timeout_s,
+                            state_changed=state_change_seen,
+                            previous_state=previous_state,
+                        )
             except DshError as exc:
                 return _result(
                     client,
@@ -333,10 +404,42 @@ def wait_output(
                     cursor=token,
                     timed_out=False,
                     has_more=False,
+                    wait_kind=wait_kind,
+                    timeout_s=timeout_s,
+                    state_changed=state_change_seen,
+                    previous_state=previous_state,
                     observation={"state": "gap" if "gap" in str(exc).lower() else "unavailable", "error": str(exc)},
                 )
 
         assignment = get_assignment(dsh_home, assignment_id)
+        if not legacy_immediate and wait_kind == "waiting_for_input" and assignment.get("state") == "waiting_for_input":
+            return _result(
+                client,
+                dsh_home,
+                assignment,
+                items=[],
+                cursor=token,
+                timed_out=False,
+                has_more=False,
+                wait_kind=wait_kind,
+                timeout_s=timeout_s,
+                state_changed=state_change_seen,
+                previous_state=previous_state,
+            )
+        if not legacy_immediate and wait_kind == "time_limit" and state_change_seen:
+            return _result(
+                client,
+                dsh_home,
+                assignment,
+                items=[],
+                cursor=token,
+                timed_out=False,
+                has_more=False,
+                wait_kind=wait_kind,
+                timeout_s=timeout_s,
+                state_changed=True,
+                previous_state=previous_state,
+            )
         terminal_seq = assignment.get("terminalSeq")
         if assignment.get("state") in _TERMINAL_STATES and isinstance(terminal_seq, int):
             if partial is None and after_seq >= terminal_seq:
@@ -348,6 +451,10 @@ def wait_output(
                     cursor=token,
                     timed_out=False,
                     has_more=False,
+                    wait_kind=wait_kind,
+                    timeout_s=timeout_s,
+                    state_changed=state_change_seen,
+                    previous_state=previous_state,
                 )
 
         if timeout_s == 0 or time.monotonic() >= deadline:
@@ -359,6 +466,10 @@ def wait_output(
                 cursor=token,
                 timed_out=True,
                 has_more=False,
+                wait_kind=wait_kind,
+                timeout_s=timeout_s,
+                state_changed=state_change_seen,
+                previous_state=previous_state,
             )
         time.sleep(min(0.4, max(0.01, deadline - time.monotonic())))
 
