@@ -89,10 +89,10 @@ class SendPromptResult(TypedDict):
     session: SessionDescriptor
     mode: Literal["queue", "steer"]
     cursor: str | None
-    observationError: NotRequired[str]
-    reconcile: NotRequired[str]
-    completed: NotRequired[bool]
-    response: NotRequired[str | None]
+    observationError: str | None
+    reconcile: str | None
+    completed: bool | None
+    response: str | None
 
 
 class WaitOutputResult(TypedDict):
@@ -303,6 +303,8 @@ def dsh_send_prompt(
                 "cursor": _CLIENT.initial_cursor(client.secret, assignment) if isinstance(assignment.get("initialSeq"), int) else None,
                 "observationError": str(exc),
                 "reconcile": "retry dsh_send_prompt with the same submission_key and identical payload, or inspect this assignment; do not use a fresh key",
+                "completed": None,
+                "response": None,
             }
         cursor = _CLIENT.initial_cursor(client.secret, assignment) if isinstance(assignment.get("initialSeq"), int) else None
         result: dict[str, Any] = {
@@ -316,6 +318,10 @@ def dsh_send_prompt(
             "session": _CLIENT.describe(target),
             "mode": mode,
             "cursor": cursor,
+            "observationError": None,
+            "reconcile": None,
+            "completed": None,
+            "response": None,
         }
         if wait_seconds:
             if cursor is None:

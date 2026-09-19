@@ -66,6 +66,10 @@ async def run_contract() -> None:
         assert {"sessions", "count", "nextCursor", "hasMore"} <= set(list_output_schema.get("properties", {}))
         send_output_schema = tools["dsh_send_prompt"].output_schema or {}
         assert {"assignmentId", "requestId", "submissionKey", "admissionState"} <= set(send_output_schema.get("properties", {}))
+        send_required = set(send_output_schema.get("required", []))
+        assert {"observationError", "reconcile", "completed", "response"} <= send_required
+        for field in ("observationError", "reconcile", "completed", "response"):
+            assert "anyOf" in send_output_schema["properties"][field]
 
         if wait.annotations is not None:
             assert wait.annotations.read_only_hint is True
