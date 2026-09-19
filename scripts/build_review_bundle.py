@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a sanitized review bundle for the DSH supervision plugin."""
+"""Build a sanitized review bundle for the DSH session plugin."""
 from __future__ import annotations
 
 import argparse
@@ -228,18 +228,18 @@ def main() -> int:
             "- Compatibility baseline: verified application-level bounded wait through ordinary MCP tool results.\n"
             "- Server-emitted unsolicited MCP push: not implemented by this plugin.\n"
             "- Client/UI display of unsolicited push: not tested.\n"
-            "- Unsolicited push text entering Astra/Codex model context or waking the model: not verified and not claimed.\n"
+            "- Unsolicited push text entering caller model context or waking the model: not verified and not claimed.\n"
             "- Live paid DSH/model smoke test: intentionally not run.\n"
             "- Installed user plugin/cache refresh in ChatGPT Desktop: not reproducible in GitHub CI; verify after normal local plugin refresh.\n",
             encoding="utf-8",
         )
         (bundle / "REVIEW.md").write_text(
-            "# DSH output-only supervision review bundle\n\n"
+            "# DSH output-only interface review bundle\n\n"
             "The implementation uses a durable assignment/native-request mapping, signed replayable cursors, bounded session discovery, "
             "an allowlisted finalized-assistant projection, compact lifecycle signals, and assignment-owned evidence references. "
-            "The normal supervisory loop is send once -> wait/drain -> review -> wait again.\n\n"
+            "The incremental interface supports send once -> wait/drain -> read subsequent output.\n\n"
             "Reasoning blocks, raw tool calls/results, assistant stream/replay payloads, and provider failure messages are excluded from "
-            "the normal feed. Terminal execution state is separated from supervisor acceptance.\n\n"
+            "the normal feed. Terminal execution state is separate from application-level task success.\n\n"
             "See HOST_DELIVERY_STATUS.md for intentionally unverified host/push surfaces and docs/NATIVE_CONTRACT.md for the "
             "native DSH contract used by the adapter.\n",
             encoding="utf-8",

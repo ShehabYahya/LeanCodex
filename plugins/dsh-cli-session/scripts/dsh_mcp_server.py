@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCP supervisory interface for an already-running loopback DSH web session."""
+"""MCP interface for an already-running loopback DSH web session."""
 
 from __future__ import annotations
 
@@ -39,17 +39,7 @@ _CLIENT = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_CLIENT)
 
 
-SUPERVISOR_INSTRUCTIONS = (
-    "Supervisor mode: formulate bounded assignments inside the user's authorized goal, then let DSH own implementation, "
-    "broad repository reads, long logs/diffs, tests, browser work, and debugging. Keep the returned assignment handle and "
-    "cursor; call dsh_wait_output repeatedly and normally do not message DSH for routine progress. Review finalized outward "
-    "DSH text and lifecycle signals, not reasoning or raw tool traffic. When evidence is insufficient, ask DSH for a narrow "
-    "investigation or independent verification instead of duplicating the worker's task. Never resend after an observation "
-    "outage under a fresh key; reconnect to the same assignment. A finished turn is evidence of execution state, not automatic "
-    "acceptance. These instructions guide behavior; strict supervisor-only enforcement requires host tool restrictions."
-)
-
-mcp = FastMCP("DSH CLI Session", instructions=SUPERVISOR_INSTRUCTIONS)
+mcp = FastMCP("DSH CLI Session")
 
 
 class SessionDescriptor(TypedDict, total=False):
@@ -287,7 +277,7 @@ def dsh_send_prompt(
     base_url: str = "http://127.0.0.1:3080",
     dsh_home: str | None = None,
 ) -> SendPromptResult:
-    """Admit one scoped assignment with durable retry identity; queue is the default."""
+    """Send a prompt to one DSH session with durable request correlation; queue is the default."""
     if not prompt.strip():
         raise ToolError("prompt text is required")
     if wait_seconds < 0:
@@ -355,7 +345,7 @@ async def dsh_wait_output(
     base_url: str = "http://127.0.0.1:3080",
     dsh_home: str | None = None,
 ) -> WaitOutputResult:
-    """Wait for finalized outward DSH messages or lifecycle changes; never sends or steers work."""
+    """Wait for new finalized DSH output or lifecycle events for an assignment. This tool is read-only."""
     try:
         client, home = _client(base_url, dsh_home)
         return await asyncio.to_thread(
@@ -383,7 +373,7 @@ def dsh_read_evidence(
     base_url: str = "http://127.0.0.1:3080",
     dsh_home: str | None = None,
 ) -> EvidenceResult:
-    """Read a bounded continuation of published assignment evidence or one outward text block."""
+    """Read a bounded continuation of an assignment-owned output block or published file."""
     try:
         client, home = _client(base_url, dsh_home)
         return _CLIENT.read_evidence(
