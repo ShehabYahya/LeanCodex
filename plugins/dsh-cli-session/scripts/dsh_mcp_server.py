@@ -31,7 +31,7 @@ except ImportError:
 
 
 _ROOT = Path(__file__).resolve().parent.parent
-_CLI_PATH = _ROOT / "skills" / "dsh-cli-session" / "scripts" / "dsh_cli_session.py"
+_CLI_PATH = _ROOT / "scripts" / "dsh_runtime" / "dsh_cli_session.py"
 _SPEC = importlib.util.spec_from_file_location("dsh_cli_session_impl", _CLI_PATH)
 if _SPEC is None or _SPEC.loader is None:  # pragma: no cover - packaging failure
     raise RuntimeError(f"cannot load bundled DSH client: {_CLI_PATH}")

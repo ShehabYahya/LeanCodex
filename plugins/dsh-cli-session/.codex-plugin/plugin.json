@@ -1,6 +1,6 @@
 {
   "name": "dsh-cli-session",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "repository": "https://github.com/ShehabYahya/dsh-cli-session",
   "description": "A durable, resumable MCP bridge to a live local DeepSeek Harness session with correlated prompts, incremental finalized output, and bounded evidence reads.",
   "author": {
@@ -17,7 +17,6 @@
     "local",
     "session"
   ],
-  "skills": "./skills/",
   "interface": {
     "displayName": "DSH CLI Session",
     "shortDescription": "Durable, resumable access to a live local DSH session.",
