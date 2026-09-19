@@ -87,7 +87,24 @@ Send this prompt to the DSH session and show me new output as it arrives.
 Resume the assignment from the last cursor.
 ```
 
-The plugin does not prescribe how the host model should prompt, decompose work, or reason. It only exposes the session interface and its technical semantics.
+The `dsh-cli-session` skill exposes the session interface and its technical semantics. The companion [dsh-orchestrator skill](plugins/dsh-cli-session/skills/dsh-orchestrator/SKILL.md) provides a workflow for engineering delegation: the host retains architecture, scope, and review while DSH handles bounded assignments.
+
+```text
+Use $dsh-orchestrator to implement this with DSH workers while you guide the architecture and review the result.
+```
+
+The companion skill uses the same MCP tools, waits on the exact assignment, and reads evidence selectively. It does not change model settings or add instructions to the MCP server. Simple inspection and verbatim prompt relay still use `dsh-cli-session`.
+
+For a personal default across repositories, add a short routing instruction to your global `~/.codex/AGENTS.md` after installing the skill:
+
+```text
+For engineering work delegated to DSH, read and follow dsh-orchestrator before
+dispatching work. Keep architecture, scope, acceptance, and final review with
+the host; delegate bounded execution to DSH. Respect explicit requests for
+direct work or simple prompt relay.
+```
+
+Global routing selects the workflow in future sessions; it does not authorize unrelated work or override a user's task-specific direction.
 
 ## Tool surface
 

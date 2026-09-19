@@ -26,7 +26,7 @@ The deterministic suite should not require paid model/provider calls.
 - keep the normal output feed bounded;
 - do not expose private reasoning or raw tool traffic;
 - distinguish observation failures from execution failures;
-- avoid behavior-shaping instructions in model-visible plugin surfaces;
+- keep the MCP interface and `dsh-cli-session` skill neutral about orchestration; workflow guidance belongs in the separately selected `dsh-orchestrator` skill;
 - keep credentials local and loopback-only.
 
 ## Pull requests
