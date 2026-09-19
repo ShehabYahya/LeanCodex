@@ -7,6 +7,7 @@ import asyncio
 import importlib.util
 from pathlib import Path
 from typing import Any, Literal
+from typing_extensions import NotRequired, TypedDict
 import uuid
 
 try:  # MCP Python SDK 2.x
@@ -49,6 +50,98 @@ SUPERVISOR_INSTRUCTIONS = (
 )
 
 mcp = FastMCP("DSH CLI Session", instructions=SUPERVISOR_INSTRUCTIONS)
+
+
+class SessionDescriptor(TypedDict, total=False):
+    sessionId: str
+    running: bool
+    cwd: str | None
+    title: str | None
+    updatedAt: int | None
+    projectionSeq: int | None
+
+
+class ListSessionsResult(TypedDict):
+    ok: bool
+    sessions: list[SessionDescriptor]
+    count: int
+    totalMatching: int
+    nextCursor: str | None
+    hasMore: bool
+
+
+class InspectSessionResult(TypedDict):
+    ok: bool
+    session: NotRequired[SessionDescriptor]
+    assignment: NotRequired[dict[str, Any]]
+
+
+class AddProjectResult(TypedDict):
+    ok: bool
+    created: bool
+    project: dict[str, Any]
+
+
+class NewSessionResult(TypedDict):
+    ok: bool
+    sessionId: str
+    agentPreset: NotRequired[str]
+
+
+class SendPromptResult(TypedDict):
+    ok: bool
+    accepted: bool | None
+    admissionState: str
+    assignmentId: str
+    requestId: str
+    submissionKey: str
+    created: bool
+    session: SessionDescriptor
+    mode: Literal["queue", "steer"]
+    cursor: str | None
+    observationError: NotRequired[str]
+    reconcile: NotRequired[str]
+    completed: NotRequired[bool]
+    response: NotRequired[str | None]
+
+
+class WaitOutputResult(TypedDict):
+    ok: bool
+    assignmentId: str
+    sessionId: str
+    state: str | None
+    admissionState: str | None
+    outcome: Literal["output", "state_change", "timeout", "gap", "unavailable"]
+    terminalObserved: bool
+    terminal: bool
+    terminalReason: str | None
+    turn: int | None
+    items: list[dict[str, Any]]
+    cursor: str
+    hasMore: bool
+    timedOut: bool
+    observation: NotRequired[dict[str, Any]]
+
+
+class EvidenceResult(TypedDict, total=False):
+    ok: bool
+    ref: str
+    kind: str
+    start: int
+    end: int
+    totalChars: int
+    hasMore: bool
+    nextStart: int | None
+    text: str
+    seq: int
+    block: int
+    index: int
+    sha256: str
+    redactions: int
+    publishedPath: str
+    bytes: int
+    mtimeNs: int
+    description: str
 
 
 def _ann(*, read_only: bool, idempotent: bool = False, destructive: bool = False):
@@ -99,7 +192,7 @@ def dsh_list_sessions(
     cwd: str | None = None,
     base_url: str = "http://127.0.0.1:3080",
     dsh_home: str | None = None,
-) -> dict[str, Any]:
+) -> ListSessionsResult:
     """List a bounded page of local DSH sessions. Use the returned cursor for continuation."""
     try:
         client, _ = _client(base_url, dsh_home)
@@ -117,7 +210,7 @@ def dsh_inspect_session(
     assignment_id: str | None = None,
     base_url: str = "http://127.0.0.1:3080",
     dsh_home: str | None = None,
-) -> dict[str, Any]:
+) -> InspectSessionResult:
     """Inspect one exact session or resume one known assignment without returning full history."""
     try:
         client, home = _client(base_url, dsh_home)
@@ -139,7 +232,7 @@ def dsh_add_project(
     path: str,
     base_url: str = "http://127.0.0.1:3080",
     dsh_home: str | None = None,
-) -> dict[str, Any]:
+) -> AddProjectResult:
     """Register an existing local directory as a DSH project/workspace."""
     try:
         project_path = _absolute_directory(path, "path")
@@ -159,7 +252,7 @@ def dsh_new_session(
     agent_preset: str | None = None,
     base_url: str = "http://127.0.0.1:3080",
     dsh_home: str | None = None,
-) -> dict[str, Any]:
+) -> NewSessionResult:
     """Create a new ordinary DSH session in a project or absolute working directory."""
     if workspace_id and cwd:
         raise ToolError("provide workspace_id or cwd, not both")
@@ -193,7 +286,7 @@ def dsh_send_prompt(
     wait_seconds: int = 0,
     base_url: str = "http://127.0.0.1:3080",
     dsh_home: str | None = None,
-) -> dict[str, Any]:
+) -> SendPromptResult:
     """Admit one scoped assignment with durable retry identity; queue is the default."""
     if not prompt.strip():
         raise ToolError("prompt text is required")
@@ -261,7 +354,7 @@ async def dsh_wait_output(
     max_batch_chars: int = 12000,
     base_url: str = "http://127.0.0.1:3080",
     dsh_home: str | None = None,
-) -> dict[str, Any]:
+) -> WaitOutputResult:
     """Wait for finalized outward DSH messages or lifecycle changes; never sends or steers work."""
     try:
         client, home = _client(base_url, dsh_home)
@@ -289,7 +382,7 @@ def dsh_read_evidence(
     expected_sha256: str | None = None,
     base_url: str = "http://127.0.0.1:3080",
     dsh_home: str | None = None,
-) -> dict[str, Any]:
+) -> EvidenceResult:
     """Read a bounded continuation of published assignment evidence or one outward text block."""
     try:
         client, home = _client(base_url, dsh_home)

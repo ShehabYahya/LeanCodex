@@ -40,6 +40,14 @@ async def run_contract() -> None:
         assert "submission_key" in send_props
         assert send_props["mode"].get("default") == "queue"
 
+        wait_output_schema = wait.output_schema or {}
+        wait_output_props = wait_output_schema.get("properties", {})
+        assert {"assignmentId", "outcome", "items", "cursor", "terminal"} <= set(wait_output_props)
+        list_output_schema = tools["dsh_list_sessions"].output_schema or {}
+        assert {"sessions", "count", "nextCursor", "hasMore"} <= set(list_output_schema.get("properties", {}))
+        send_output_schema = tools["dsh_send_prompt"].output_schema or {}
+        assert {"assignmentId", "requestId", "submissionKey", "admissionState"} <= set(send_output_schema.get("properties", {}))
+
         if wait.annotations is not None:
             assert wait.annotations.read_only_hint is True
             assert wait.annotations.idempotent_hint is True
