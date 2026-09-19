@@ -1,4 +1,4 @@
 interface:
   display_name: "DSH CLI Session"
-  short_description: "Delegate implementation to DSH and supervise its outward results"
-  default_prompt: "Use $dsh-cli-session in supervisor mode: delegate bounded work to my live DSH session, wait on its output cursor, and review results without duplicating implementation or broad reads."
+  short_description: "Access local DSH sessions through MCP tools"
+  default_prompt: "Use $dsh-cli-session to access my local DSH session."

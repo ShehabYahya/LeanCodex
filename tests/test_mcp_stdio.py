@@ -10,6 +10,24 @@ from mcp import Client, StdioServerParameters
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "plugins" / "dsh-cli-session" / "scripts" / "dsh_mcp_server.py"
 
+MODEL_VISIBLE_SURFACES = [
+    ROOT / "plugins" / "dsh-cli-session" / "skills" / "dsh-cli-session" / "SKILL.md",
+    ROOT / "plugins" / "dsh-cli-session" / "skills" / "dsh-cli-session" / "agents" / "openai.yaml",
+    ROOT / "plugins" / "dsh-cli-session" / ".codex-plugin" / "plugin.json",
+    ROOT / "plugins" / "dsh-cli-session" / ".mcp.json",
+]
+BANNED_BEHAVIOR_SHAPING = [
+    "astra",
+    "supervisor mode",
+    "delegate implementation",
+    "delegate bounded work",
+    "broad repository reads",
+    "acceptance criteria",
+    "independent verification",
+    "without duplicating",
+    "should not duplicate",
+]
+
 EXPECTED = {
     "dsh_list_sessions",
     "dsh_inspect_session",
@@ -28,6 +46,7 @@ async def run_contract() -> None:
         cwd=str(ROOT),
     )
     async with Client(params) as client:
+        assert not client.instructions, "MCP server should not inject global behavior instructions"
         listed = await client.list_tools()
         tools = {tool.name: tool for tool in listed.tools}
         missing = EXPECTED - set(tools)
@@ -54,6 +73,19 @@ async def run_contract() -> None:
         send = tools["dsh_send_prompt"]
         if send.annotations is not None:
             assert send.annotations.read_only_hint is False
+
+        model_surface_text = "\n".join(path.read_text(encoding="utf-8") for path in MODEL_VISIBLE_SURFACES).lower()
+        for phrase in BANNED_BEHAVIOR_SHAPING:
+            assert phrase not in model_surface_text, f"behavior-shaping phrase leaked into model-visible surface: {phrase}"
+
+        repository_text = "\n".join(
+            path.read_text(encoding="utf-8", errors="ignore")
+            for path in ROOT.rglob("*")
+            if path.is_file()
+            and ".git" not in path.parts
+            and path.suffix.lower() in {".py", ".md", ".json", ".yaml", ".yml", ".txt"}
+        ).lower()
+        assert "astra" not in repository_text, "model-specific name must not appear in repository content"
 
         # Exercise the real stdio error contract without contacting DSH or any model/provider.
         with tempfile.TemporaryDirectory() as td:
