@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "dshCliSession": {
+      "title": "DSH CLI Session",
+      "description": "Inspect and prompt an already-running local DeepSeek Harness session.",
+      "cwd": ".",
+      "command": "python3",
+      "args": [
+        "./scripts/dsh_mcp_server.py"
+      ]
+    }
+  }
+}

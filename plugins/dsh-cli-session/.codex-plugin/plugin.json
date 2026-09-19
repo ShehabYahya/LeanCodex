@@ -1,0 +1,37 @@
+{
+  "name": "dsh-cli-session",
+  "version": "0.1.0",
+  "repository": "https://github.com/ShehabYahya/dsh-cli-session",
+  "description": "Safely inspect and prompt an already-running local DeepSeek Harness session.",
+  "author": {
+    "name": "Local developer"
+  },
+  "license": "Proprietary",
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "local",
+    "session"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "DSH CLI Session",
+    "shortDescription": "Inspect and prompt a live local DSH session.",
+    "longDescription": "DSH CLI Session provides a small, loopback-only tool surface for listing sessions, inspecting a selected session, and queueing or steering a prompt through an already-running DeepSeek Harness web session.",
+    "developerName": "Local developer",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "List the running local DSH sessions",
+      "Inspect a specific DSH session",
+      "Queue this prompt in my DSH session"
+    ],
+    "brandColor": "#4F46E5"
+  },
+  "mcpServers": "./.mcp.json"
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "DSH CLI Session"
+  short_description: "Prompt a live local DSH session through its CLI API"
+  default_prompt: "Use $dsh-cli-session to send a prompt through the live local DSH server."
