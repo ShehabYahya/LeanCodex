@@ -190,7 +190,7 @@ class SupervisionTests(unittest.TestCase):
             for _ in range(20):
                 result = wait_output(
                     client, home, assignment["assignmentId"], cursor,
-                    timeout_s=0, max_items=8, max_message_chars=5, max_batch_chars=5,
+                    timeout_s=0, max_items=1, max_message_chars=5, max_batch_chars=256,
                 )
                 cursor = result["cursor"]
                 parts.extend(item["text"] for item in result["items"] if item["kind"] == "output")

@@ -43,8 +43,8 @@ def _validate_wait(
         raise DshError(f"max_items must be between 1 and {MAX_BATCH_ITEMS}")
     if not isinstance(max_message_chars, int) or max_message_chars < 1 or max_message_chars > MAX_MESSAGE_CHARS:
         raise DshError(f"max_message_chars must be between 1 and {MAX_MESSAGE_CHARS}")
-    if not isinstance(max_batch_chars, int) or max_batch_chars < 1 or max_batch_chars > MAX_BATCH_CHARS:
-        raise DshError(f"max_batch_chars must be between 1 and {MAX_BATCH_CHARS}")
+    if not isinstance(max_batch_chars, int) or max_batch_chars < 256 or max_batch_chars > MAX_BATCH_CHARS:
+        raise DshError(f"max_batch_chars must be between 256 and {MAX_BATCH_CHARS}")
 
 
 def _assignment_view(assignment: dict[str, Any], item: dict[str, Any] | None = None) -> dict[str, Any]:
