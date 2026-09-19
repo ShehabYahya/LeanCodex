@@ -138,6 +138,10 @@ def reduce_events(
 
     def append_item(item: dict[str, Any], continuation: dict[str, int]) -> bool:
         nonlocal batch_chars, cursor_partial
+        item.setdefault("source", {
+            "assignmentId": assignment["assignmentId"],
+            "sessionId": assignment["sessionId"],
+        })
         size = _item_chars(item)
         if len(outputs) >= max_items or batch_chars + size > max_batch_chars:
             if not outputs and size > max_batch_chars:

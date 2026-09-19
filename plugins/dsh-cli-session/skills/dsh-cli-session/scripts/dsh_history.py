@@ -46,6 +46,24 @@ def _event_records(page: dict[str, Any]) -> list[dict[str, Any]]:
 def current_session(client: DshClient, session_id: str, timeout: float = 20.0) -> dict[str, Any]:
     return choose_session(sessions(client, timeout=timeout), session_id, None)
 
+
+def read_recent_events(
+    client: DshClient,
+    session_id: str,
+    *,
+    max_messages: int = 12,
+    timeout: float = 5.0,
+) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
+    """Read a bounded recent raw-log window for compact inspection, never full history."""
+    item = current_session(client, session_id, timeout=timeout)
+    head = projection_seq(item)
+    if head is None:
+        raise DshError("session projection cursor is unavailable; cannot inspect a coherent recent window")
+    if head < 0:
+        return [], item, False
+    page = _page(client, session_id, head, None, max_messages, timeout=timeout)
+    return _event_records(page), item, page.get("hasMore") is True
+
 def read_events_since(
     client: DshClient,
     session_id: str,

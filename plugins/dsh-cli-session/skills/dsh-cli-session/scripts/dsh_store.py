@@ -25,6 +25,9 @@ from dsh_transport import (
 
 STORE_VERSION = 1
 CURSOR_VERSION = 1
+MAX_ASSIGNMENTS = 512
+TERMINAL_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+_TERMINAL_STATES = {"completed", "cancelled", "blocked", "failed", "rejected"}
 _STORE_LOCK = threading.RLock()
 
 def _store_path(dsh_home: Path) -> Path:
@@ -32,6 +35,46 @@ def _store_path(dsh_home: Path) -> Path:
 
 def _empty_store() -> dict[str, Any]:
     return {"version": STORE_VERSION, "assignments": {}, "submissionKeys": {}}
+
+def _prune_store(data: dict[str, Any], now_ms: int | None = None) -> int:
+    """Bound retained correlation state without ever discarding active assignments."""
+    now = int(time.time() * 1000) if now_ms is None else now_ms
+    assignments = data["assignments"]
+    submission_keys = data["submissionKeys"]
+    removed: set[str] = set()
+    cutoff = now - TERMINAL_RETENTION_MS
+
+    for assignment_id, assignment in list(assignments.items()):
+        if not isinstance(assignment, dict) or assignment.get("state") not in _TERMINAL_STATES:
+            continue
+        touched = assignment.get("updatedAt", assignment.get("admittedAt", assignment.get("createdAt", now)))
+        if isinstance(touched, int) and touched < cutoff:
+            assignments.pop(assignment_id, None)
+            removed.add(assignment_id)
+
+    if len(assignments) > MAX_ASSIGNMENTS:
+        terminal = sorted(
+            (
+                (
+                    int(value.get("updatedAt", value.get("admittedAt", value.get("createdAt", now)))),
+                    assignment_id,
+                )
+                for assignment_id, value in assignments.items()
+                if isinstance(value, dict) and value.get("state") in _TERMINAL_STATES
+            ),
+            key=lambda pair: pair[0],
+        )
+        for _, assignment_id in terminal:
+            if len(assignments) <= MAX_ASSIGNMENTS:
+                break
+            assignments.pop(assignment_id, None)
+            removed.add(assignment_id)
+
+    if removed:
+        for slot, assignment_id in list(submission_keys.items()):
+            if assignment_id in removed or assignment_id not in assignments:
+                submission_keys.pop(slot, None)
+    return len(removed)
 
 def _load_store_unlocked(dsh_home: Path) -> dict[str, Any]:
     path = _store_path(dsh_home)
@@ -128,6 +171,9 @@ def prepare_assignment(
     slot = _submission_slot(submission_key)
     with _store_guard(dsh_home):
         store = _load_store_unlocked(dsh_home)
+        pruned = _prune_store(store)
+        if pruned:
+            _save_store_unlocked(dsh_home, store)
         existing_id = store["submissionKeys"].get(slot)
         if isinstance(existing_id, str):
             existing = store["assignments"].get(existing_id)
@@ -137,6 +183,11 @@ def prepare_assignment(
                 raise DshError("submission_key was already used for a different session or payload")
             return existing, False
 
+        if len(store["assignments"]) >= MAX_ASSIGNMENTS:
+            raise DshError(
+                f"supervision store reached its {MAX_ASSIGNMENTS}-assignment retention limit; "
+                "finish or explicitly clear old active work before admitting another assignment"
+            )
         assignment_id = str(uuid.uuid4())
         request_id = str(uuid.uuid4())
         now = int(time.time() * 1000)
@@ -149,6 +200,7 @@ def prepare_assignment(
             "nativeRequestId": request_id,
             "mode": mode,
             "createdAt": now,
+            "updatedAt": now,
             "admissionState": "prepared",
             "initialSeq": projection_seq(session) if projection_seq(session) is not None else -1,
             "cwd": session.get("cwd"),
@@ -169,7 +221,9 @@ def update_assignment(dsh_home: Path, assignment: dict[str, Any]) -> None:
         aid = assignment.get("assignmentId")
         if not isinstance(aid, str) or aid not in store["assignments"]:
             raise DshError("assignment is not registered in the supervision store")
+        assignment["updatedAt"] = int(time.time() * 1000)
         store["assignments"][aid] = assignment
+        _prune_store(store)
         _save_store_unlocked(dsh_home, store)
 
 def get_assignment(dsh_home: Path, assignment_id: str) -> dict[str, Any]:

@@ -9,6 +9,7 @@ from typing import Any
 from dsh_transport import DshClient, DshError, _inbox_has_request, choose_session, projection_seq, sessions
 from dsh_store import decode_cursor, encode_cursor, get_assignment, initial_cursor, update_assignment
 from dsh_history import (
+    _assistant_blocks,
     _event_data,
     _find_enclosing_turn,
     _source_rpc_id,
@@ -16,6 +17,7 @@ from dsh_history import (
     _turn_reason_state,
     current_session,
     read_events_since,
+    read_recent_events,
 )
 from dsh_projection import reduce_events
 
@@ -63,11 +65,16 @@ def _assignment_view(assignment: dict[str, Any], item: dict[str, Any] | None = N
         "terminalSeq": assignment.get("terminalSeq"),
         "terminalReason": assignment.get("terminalReason"),
         "lastCursor": assignment.get("lastCursor"),
+        "reconcileSeq": assignment.get("reconcileSeq"),
     }
     if item is not None:
         result["session"] = {
             "running": bool(item.get("running")),
             "updatedAt": item.get("updatedAt"),
+            "projectionSeq": projection_seq(item),
+        }
+        result["freshness"] = {
+            "observedAtMs": int(time.time() * 1000),
             "projectionSeq": projection_seq(item),
         }
     return result
@@ -105,12 +112,15 @@ def reconcile_assignment_state(
     initial = assignment.get("initialSeq")
     if not isinstance(initial, int) or initial < -1:
         initial = -1
+    reconcile_seq = assignment.get("reconcileSeq")
+    if not isinstance(reconcile_seq, int) or reconcile_seq < initial:
+        reconcile_seq = initial
     head = projection_seq(item)
-    if head is not None and head > initial:
+    if head is not None and head > reconcile_seq:
         events, _, _ = read_events_since(
             client,
             assignment["sessionId"],
-            initial,
+            reconcile_seq,
             deadline=deadline,
         )
         claim_seq = assignment.get("claimSeq") if isinstance(assignment.get("claimSeq"), int) else None
@@ -162,6 +172,8 @@ def reconcile_assignment_state(
             if latest_state is not None and assignment.get("state") != latest_state:
                 assignment["state"] = latest_state
                 changed = True
+        assignment["reconcileSeq"] = head
+        changed = True
 
     if changed:
         update_assignment(dsh_home, assignment)
@@ -178,16 +190,40 @@ def _result(
     timed_out: bool,
     has_more: bool,
     observation: dict[str, Any] | None = None,
+    outcome: str | None = None,
 ) -> dict[str, Any]:
     assignment["lastCursor"] = cursor
     update_assignment(dsh_home, assignment)
+    cursor_after, cursor_partial = decode_cursor(client.secret, cursor, assignment)
+    terminal_observed = assignment.get("state") in _TERMINAL_STATES
+    terminal_seq = assignment.get("terminalSeq")
+    terminal_delivered = (
+        terminal_observed
+        and isinstance(terminal_seq, int)
+        and cursor_partial is None
+        and cursor_after >= terminal_seq
+        and not has_more
+    )
+    if outcome is None:
+        if observation is not None and observation.get("state") == "gap":
+            outcome = "gap"
+        elif observation is not None and observation.get("state") == "unavailable":
+            outcome = "unavailable"
+        elif timed_out:
+            outcome = "timeout"
+        elif any(item.get("kind") in {"output", "attachment", "unsupported_content"} for item in items):
+            outcome = "output"
+        else:
+            outcome = "state_change"
     return {
         "ok": True,
         "assignmentId": assignment["assignmentId"],
         "sessionId": assignment["sessionId"],
         "state": assignment.get("state"),
         "admissionState": assignment.get("admissionState"),
-        "terminal": assignment.get("state") in _TERMINAL_STATES,
+        "outcome": outcome,
+        "terminalObserved": terminal_observed,
+        "terminal": terminal_delivered,
         "terminalReason": assignment.get("terminalReason"),
         "turn": assignment.get("turn"),
         "items": items,
@@ -213,6 +249,8 @@ def wait_output(
     token = after_cursor or initial_cursor(client.secret, assignment)
     after_seq, partial = decode_cursor(client.secret, token, assignment)
     deadline = time.monotonic() + timeout_s
+    # timeout_s=0 means one non-waiting observation, not an unbounded upstream RPC.
+    observation_deadline = deadline if timeout_s > 0 else time.monotonic() + 1.0
 
     while True:
         try:
@@ -220,7 +258,7 @@ def wait_output(
                 client,
                 dsh_home,
                 assignment,
-                deadline=deadline if timeout_s > 0 else None,
+                deadline=observation_deadline,
             )
         except DshError as exc:
             # Observation failure is not assignment failure. Keep the same signed cursor.
@@ -239,13 +277,27 @@ def wait_output(
             continue
 
         head = projection_seq(item) if item is not None else None
+        if head is not None and after_seq > head:
+            return _result(
+                client,
+                dsh_home,
+                assignment,
+                items=[],
+                cursor=token,
+                timed_out=False,
+                has_more=False,
+                observation={
+                    "state": "gap",
+                    "error": f"supervision cursor seq {after_seq} is ahead of current session cursor {head}",
+                },
+            )
         if head is not None and (head > after_seq or partial is not None):
             try:
                 events, _, _ = read_events_since(
                     client,
                     assignment["sessionId"],
                     after_seq,
-                    deadline=deadline if timeout_s > 0 else None,
+                    deadline=observation_deadline,
                 )
                 items, cursor_after, cursor_partial, has_more = reduce_events(
                     client,
@@ -257,7 +309,7 @@ def wait_output(
                     max_items=max_items,
                     max_message_chars=max_message_chars,
                     max_batch_chars=max_batch_chars,
-                    deadline=deadline if timeout_s > 0 else None,
+                    deadline=observation_deadline,
                 )
                 assignment = get_assignment(dsh_home, assignment_id)
                 token = encode_cursor(client.secret, assignment, cursor_after, cursor_partial)
@@ -311,6 +363,97 @@ def wait_output(
         time.sleep(min(0.4, max(0.01, deadline - time.monotonic())))
 
 
+def _bounded_tail_summary(
+    assignment: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    claim = assignment.get("claimSeq")
+    terminal = assignment.get("terminalSeq")
+    turn = assignment.get("turn")
+    filtered: list[dict[str, Any]] = []
+    for event in events:
+        seq = event.get("seq")
+        if not isinstance(seq, int):
+            continue
+        if isinstance(claim, int) and seq < claim:
+            continue
+        if isinstance(terminal, int) and seq > terminal:
+            continue
+        event_turn = _turn_from_data(event)
+        if isinstance(turn, int) and isinstance(event_turn, int) and event_turn != turn:
+            continue
+        filtered.append(event)
+
+    output_refs: list[str] = []
+    evidence_refs: list[str] = []
+    approvals: dict[str, dict[str, Any]] = {}
+    children: dict[tuple[str, int], dict[str, Any]] = {}
+    for event in filtered:
+        seq = int(event["seq"])
+        event_type = event.get("type")
+        data = _event_data(event)
+        if event_type == "assistant/message":
+            for index, block in enumerate(_assistant_blocks(event)):
+                if block.get("type") == "text":
+                    output_refs.append(f"message:{seq}:{index}")
+        elif event_type == "deliverables/presented":
+            files = data.get("files")
+            if isinstance(files, list):
+                evidence_refs.extend(
+                    f"artifact:{seq}:{index}"
+                    for index, value in enumerate(files[:32])
+                    if isinstance(value, dict) and isinstance(value.get("path"), str)
+                )
+        elif event_type == "approval/asked":
+            approval_id = data.get("id")
+            if isinstance(approval_id, str):
+                approvals[approval_id] = {
+                    "kind": "waiting_for_input",
+                    "id": approval_id,
+                    **({"toolName": data["toolName"]} if isinstance(data.get("toolName"), str) else {}),
+                    "seq": seq,
+                }
+        elif event_type == "approval/decided":
+            approval_id = data.get("id")
+            if isinstance(approval_id, str):
+                approvals.pop(approval_id, None)
+        elif event_type == "tool-workflow/agent-start":
+            run_id = data.get("runId")
+            member_seq = data.get("seq")
+            if isinstance(run_id, str) and isinstance(member_seq, int):
+                children[(run_id, member_seq)] = {
+                    "runId": run_id,
+                    "memberSeq": member_seq,
+                    "state": "running",
+                    **({"childId": data["childId"]} if isinstance(data.get("childId"), str) else {}),
+                    **({"label": data["label"]} if isinstance(data.get("label"), str) else {}),
+                    **({"phase": data["phase"]} if isinstance(data.get("phase"), str) else {}),
+                }
+        elif event_type == "tool-workflow/agent-end":
+            run_id = data.get("runId")
+            member_seq = data.get("seq")
+            if isinstance(run_id, str) and isinstance(member_seq, int):
+                summary = children.setdefault((run_id, member_seq), {
+                    "runId": run_id, "memberSeq": member_seq,
+                })
+                outcome = data.get("outcome")
+                summary["state"] = outcome if isinstance(outcome, str) else "settled"
+
+    blocker = None
+    if assignment.get("state") == "waiting_for_input":
+        if approvals:
+            blocker = sorted(approvals.values(), key=lambda value: value["seq"])[-1]
+        else:
+            blocker = {"kind": "waiting_for_input", "detailsAvailable": False}
+
+    return {
+        "latestOutputRefs": output_refs[-5:],
+        "latestEvidenceRefs": evidence_refs[-8:],
+        "blocker": blocker,
+        "children": list(children.values())[-8:],
+    }
+
+
 def inspect_assignment(
     client: DshClient,
     dsh_home: Path,
@@ -319,12 +462,22 @@ def inspect_assignment(
     assignment = get_assignment(dsh_home, assignment_id)
     observation: dict[str, Any] | None = None
     item: dict[str, Any] | None = None
+    tail: list[dict[str, Any]] = []
+    tail_has_more = False
     try:
         assignment, item = reconcile_assignment_state(client, dsh_home, assignment)
+        tail, recent_item, tail_has_more = read_recent_events(
+            client, assignment["sessionId"], max_messages=12, timeout=5.0
+        )
+        item = recent_item
     except DshError as exc:
         observation = {"state": "unavailable", "error": str(exc)}
     result = _assignment_view(assignment, item)
     result["cursor"] = assignment.get("lastCursor") or initial_cursor(client.secret, assignment)
+    result["recent"] = {
+        **_bounded_tail_summary(assignment, tail),
+        "tailHasMore": tail_has_more,
+    }
     if observation is not None:
         result["observation"] = observation
     return result

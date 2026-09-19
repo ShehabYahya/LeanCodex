@@ -61,6 +61,7 @@ class FakeClient:
         self.prompt_requests: list[dict] = []
         self.prompt_failure: Exception | None = None
         self.list_failure: Exception | None = None
+        self.calls: list[str] = []
 
     def _sync_head(self) -> None:
         head = self.events[-1]["seq"] if self.events else -1
@@ -69,6 +70,7 @@ class FakeClient:
             row["projections"]["asOfSeq"] = head
 
     def rpc(self, method: str, argument_name: str, argument: object, timeout: float = 20.0) -> object:
+        self.calls.append(method)
         if method == "session/list":
             if self.list_failure is not None:
                 raise self.list_failure
@@ -234,6 +236,7 @@ class SupervisionTests(unittest.TestCase):
             self.assertEqual(result["state"], "queued")
             self.assertFalse(result["terminal"])
             self.assertEqual(result["observation"]["state"], "unavailable")
+            self.assertEqual(result["outcome"], "unavailable")
             self.assertEqual(result["cursor"], cursor)
 
     def test_message_and_artifact_evidence_are_assignment_owned_and_bounded(self) -> None:
@@ -296,6 +299,276 @@ class SupervisionTests(unittest.TestCase):
             wait_output(client, home, assignment["assignmentId"], initial_cursor(client.secret, assignment), timeout_s=0)
             with self.assertRaisesRegex(DshError, "inside the assignment workspace"):
                 read_evidence(client, home, assignment["assignmentId"], "artifact:3:0")
+
+    def test_multiple_progress_messages_then_terminal_are_delivered_in_source_order(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            target = row(seq=0)
+            assignment, _ = prepare_assignment(home, target, "task", "queue", "progress-key")
+            request_id = assignment["nativeRequestId"]
+            client = FakeClient([target], [
+                event(1, "turn/start", {"turn": 1}),
+                user(2, request_id),
+                assistant(3, 1, [{"type": "text", "text": "progress-1"}]),
+                event(4, "step/end", {"turn": 1, "step": 1}),
+                assistant(5, 1, [{"type": "text", "text": "progress-2"}]),
+                assistant(6, 1, [{"type": "text", "text": "final"}]),
+                event(7, "turn/end", {"turn": 1, "reason": {"kind": "completed"}}),
+            ])
+            assignment = admit_assignment(client, home, assignment, "task")
+            cursor = initial_cursor(client.secret, assignment)
+            seen: list[dict] = []
+            for _ in range(10):
+                result = wait_output(
+                    client, home, assignment["assignmentId"], cursor,
+                    timeout_s=0, max_items=2, max_batch_chars=1000,
+                )
+                cursor = result["cursor"]
+                seen.extend(result["items"])
+                if result["terminal"]:
+                    break
+            self.assertEqual(
+                [item["text"] for item in seen if item["kind"] == "output"],
+                ["progress-1", "progress-2", "final"],
+            )
+            self.assertEqual(seen[-1]["kind"], "lifecycle")
+            self.assertEqual(seen[-1]["state"], "completed")
+            self.assertTrue(result["terminal"])
+            self.assertFalse(result["hasMore"])
+
+    def test_retry_child_failure_waiting_input_and_cancellation_remain_distinct(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            target = row(seq=0)
+            assignment, _ = prepare_assignment(home, target, "task", "queue", "state-key")
+            request_id = assignment["nativeRequestId"]
+            client = FakeClient([target], [
+                event(1, "turn/start", {"turn": 1}),
+                user(2, request_id),
+                event(3, "llm/retry", {
+                    "retryId": "r1", "turn": 1, "step": 1, "provider": "p", "mode": "normal",
+                    "policyKey": "default", "retry": 1, "maxRetries": 3, "delayMs": 10,
+                    "failure": {"code": "TIMEOUT", "message": "PROVIDER_RAW_MESSAGE"},
+                }),
+                event(4, "llm/retry-started", {"retryId": "r1", "turn": 1, "step": 1, "retry": 1}),
+                event(5, "tool-workflow/agent-start", {
+                    "runId": "run", "seq": 1, "label": "worker", "childId": "child-1",
+                }),
+                event(6, "tool-workflow/agent-end", {"runId": "run", "seq": 1, "outcome": "failed"}),
+                event(7, "approval/asked", {"id": "ask-1", "toolName": "bash", "reason": "RAW_APPROVAL_REASON"}),
+                event(8, "approval/decided", {"id": "ask-1", "outcome": "allowed-once"}),
+                event(9, "turn/end", {
+                    "turn": 1, "reason": {"kind": "aborted", "reason": {"kind": "user"}},
+                }),
+            ])
+            assignment = admit_assignment(client, home, assignment, "task")
+            result = wait_output(
+                client, home, assignment["assignmentId"], initial_cursor(client.secret, assignment),
+                timeout_s=0, max_items=32, max_batch_chars=10000,
+            )
+            kinds = [item["kind"] for item in result["items"]]
+            self.assertIn("provider_retry", kinds)
+            self.assertIn("provider_retry_started", kinds)
+            self.assertIn("child_lifecycle", kinds)
+            self.assertIn("waiting_for_input", kinds)
+            self.assertIn("input_resolved", kinds)
+            child_end = next(
+                item for item in result["items"]
+                if item["kind"] == "child_lifecycle" and item.get("event") == "tool-workflow/agent-end"
+            )
+            self.assertEqual(child_end["outcome"], "failed")
+            self.assertEqual(result["state"], "cancelled")
+            self.assertEqual(result["terminalReason"], "aborted")
+            payload = json.dumps(result)
+            self.assertNotIn("PROVIDER_RAW_MESSAGE", payload)
+            self.assertNotIn("RAW_APPROVAL_REASON", payload)
+
+    def test_excluded_nested_stream_tool_result_error_and_unknown_payload_do_not_leak(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            target = row(seq=0)
+            assignment, _ = prepare_assignment(home, target, "task", "queue", "leak-key")
+            request_id = assignment["nativeRequestId"]
+            message = assistant(3, 1, [
+                {"type": "reasoning", "text": "REASONING_SENTINEL"},
+                {"type": "tool-call", "id": "c1", "name": "bash", "arguments": "{\"x\":\"TOOL_ARG_SENTINEL\"}"},
+                {"type": "tool-result", "toolCallId": "c0", "content": [{"type": "text", "text": "TOOL_RESULT_SENTINEL"}]},
+                {"type": "future-block", "secretPayload": "UNKNOWN_SENTINEL"},
+                {"type": "text", "text": "safe outward"},
+            ])
+            message["data"]["stream"] = [{"type": "text-delta", "text": "STREAM_SENTINEL"}]
+            client = FakeClient([target], [
+                event(1, "turn/start", {"turn": 1}),
+                user(2, request_id),
+                message,
+                event(4, "tool/result", {
+                    "turn": 1, "step": 1,
+                    "message": {"content": [{"type": "tool-result", "content": [{"type": "text", "text": "RAW_TOOL_EVENT_SENTINEL"}]}]},
+                }),
+                event(5, "turn/end", {
+                    "turn": 1,
+                    "reason": {"kind": "error", "error": {"code": "BROKEN", "message": "ERROR_MESSAGE_SENTINEL"}},
+                }),
+            ])
+            assignment = admit_assignment(client, home, assignment, "task")
+            result = wait_output(
+                client, home, assignment["assignmentId"], initial_cursor(client.secret, assignment),
+                timeout_s=0, max_items=32, max_batch_chars=10000,
+            )
+            payload = json.dumps(result)
+            self.assertIn("safe outward", payload)
+            self.assertIn("unsupported_content", payload)
+            for sentinel in (
+                "REASONING_SENTINEL", "TOOL_ARG_SENTINEL", "TOOL_RESULT_SENTINEL",
+                "UNKNOWN_SENTINEL", "STREAM_SENTINEL", "RAW_TOOL_EVENT_SENTINEL", "ERROR_MESSAGE_SENTINEL",
+            ):
+                self.assertNotIn(sentinel, payload)
+
+    def test_same_cursor_replays_stable_ids_and_foreign_future_cursors_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            target = row(seq=0)
+            assignment, _ = prepare_assignment(home, target, "task", "queue", "replay-key")
+            request_id = assignment["nativeRequestId"]
+            client = FakeClient([target], [
+                event(1, "turn/start", {"turn": 1}),
+                user(2, request_id),
+                assistant(3, 1, [{"type": "text", "text": "hello"}]),
+                event(4, "turn/end", {"turn": 1, "reason": {"kind": "completed"}}),
+            ])
+            assignment = admit_assignment(client, home, assignment, "task")
+            original = initial_cursor(client.secret, assignment)
+            first = wait_output(client, home, assignment["assignmentId"], original, timeout_s=0)
+            second = wait_output(client, home, assignment["assignmentId"], original, timeout_s=0)
+            self.assertEqual(
+                [item["eventId"] for item in first["items"]],
+                [item["eventId"] for item in second["items"]],
+            )
+
+            other, _ = prepare_assignment(home, row("s2", seq=0), "other", "queue", "other-key")
+            with self.assertRaisesRegex(DshError, "another assignment|another.*session"):
+                decode_cursor(client.secret, original, other)
+
+            future = encode_cursor(client.secret, assignment, 99)
+            gap = wait_output(client, home, assignment["assignmentId"], future, timeout_s=0)
+            self.assertEqual(gap["outcome"], "gap")
+            self.assertEqual(gap["observation"]["state"], "gap")
+
+    def test_no_change_is_timeout_and_wait_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            client = FakeClient([row(seq=0)], [event(0, "turn/start", {"turn": 0})])
+            assignment, _ = prepare_assignment(home, client.rows[0], "task", "queue", "readonly-key")
+            assignment = admit_assignment(client, home, assignment, "task")
+            prompts_before = len(client.prompt_requests)
+            result = wait_output(
+                client, home, assignment["assignmentId"], initial_cursor(client.secret, assignment), timeout_s=0
+            )
+            self.assertEqual(result["outcome"], "timeout")
+            self.assertTrue(result["timedOut"])
+            self.assertEqual(len(client.prompt_requests), prompts_before)
+            self.assertTrue(set(client.calls[prompts_before:]).issubset({"session/list", "session/page", "session/prompt"}))
+            self.assertNotIn("session/cancel", client.calls)
+
+    def test_compaction_markers_and_restart_do_not_break_raw_sequence_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            target = row(seq=0)
+            assignment, _ = prepare_assignment(home, target, "task", "queue", "restart-key")
+            request_id = assignment["nativeRequestId"]
+            events = [
+                event(1, "turn/start", {"turn": 1}),
+                user(2, request_id),
+                assistant(3, 1, [{"type": "text", "text": "before"}]),
+                event(4, "compaction/start", {"turn": 1, "compactionId": "c"}),
+                event(5, "compaction/summary", {"turn": 1, "compactionId": "c", "summary": [{"type": "text", "text": "SUMMARY_RAW"}]}),
+                event(6, "compaction/end", {"turn": 1, "compactionId": "c"}),
+                assistant(7, 1, [{"type": "text", "text": "after"}]),
+                event(8, "turn/end", {"turn": 1, "reason": {"kind": "completed"}}),
+            ]
+            client1 = FakeClient([target], events)
+            assignment = admit_assignment(client1, home, assignment, "task")
+            cursor = initial_cursor(client1.secret, assignment)
+            first = wait_output(
+                client1, home, assignment["assignmentId"], cursor,
+                timeout_s=0, max_items=1, max_batch_chars=1000,
+            )
+            self.assertEqual([item.get("text") for item in first["items"] if item["kind"] == "output"], ["before"])
+
+            client2 = FakeClient([target], events)
+            second_texts: list[str] = []
+            cursor = first["cursor"]
+            for _ in range(10):
+                result = wait_output(
+                    client2, home, assignment["assignmentId"], cursor,
+                    timeout_s=0, max_items=2, max_batch_chars=1000,
+                )
+                cursor = result["cursor"]
+                second_texts.extend(item["text"] for item in result["items"] if item["kind"] == "output")
+                if result["terminal"]:
+                    break
+            self.assertEqual(second_texts, ["after"])
+            self.assertNotIn("SUMMARY_RAW", json.dumps(result))
+
+    def test_secret_redaction_and_published_symlink_refusal(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td) / "dsh"
+            workspace = Path(td) / "workspace"
+            workspace.mkdir()
+            target_file = workspace / "target.txt"
+            target_file.write_text("safe", encoding="utf-8")
+            link = workspace / "report.txt"
+            link.symlink_to(target_file)
+            target = row(seq=0, cwd=str(workspace))
+            assignment, _ = prepare_assignment(home, target, "task", "queue", "secret-key")
+            request_id = assignment["nativeRequestId"]
+            client = FakeClient([target])
+            client.events = [
+                event(1, "turn/start", {"turn": 1}),
+                user(2, request_id),
+                assistant(3, 1, [{"type": "text", "text": f"credential={client.cookie} visible"}]),
+                event(4, "deliverables/presented", {
+                    "turn": 1, "callId": "p", "files": [{"path": "report.txt"}],
+                }),
+                event(5, "turn/end", {"turn": 1, "reason": {"kind": "completed"}}),
+            ]
+            assignment = admit_assignment(client, home, assignment, "task")
+            result = wait_output(
+                client, home, assignment["assignmentId"], initial_cursor(client.secret, assignment), timeout_s=0
+            )
+            payload = json.dumps(result)
+            self.assertNotIn(client.cookie, payload)
+            output = next(item for item in result["items"] if item["kind"] == "output")
+            self.assertGreater(output.get("redactions", 0), 0)
+            with self.assertRaisesRegex(DshError, "symbolic link"):
+                read_evidence(client, home, assignment["assignmentId"], "artifact:4:0")
+
+    def test_supervisor_fixture_send_wait_progress_wait_terminal_uses_one_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            target = row(seq=0)
+            assignment, _ = prepare_assignment(home, target, "implement bounded change", "queue", "workflow-key")
+            request_id = assignment["nativeRequestId"]
+            client = FakeClient([target], [
+                event(1, "turn/start", {"turn": 1}),
+                user(2, request_id),
+                assistant(3, 1, [{"type": "text", "text": "milestone"}]),
+            ])
+            assignment = admit_assignment(client, home, assignment, "implement bounded change")
+            cursor = initial_cursor(client.secret, assignment)
+            progress = wait_output(client, home, assignment["assignmentId"], cursor, timeout_s=0)
+            self.assertEqual(progress["outcome"], "output")
+            self.assertFalse(progress["terminal"])
+            cursor = progress["cursor"]
+
+            client.events.extend([
+                assistant(4, 1, [{"type": "text", "text": "done"}]),
+                event(5, "turn/end", {"turn": 1, "reason": {"kind": "completed"}}),
+            ])
+            final = wait_output(client, home, assignment["assignmentId"], cursor, timeout_s=0)
+            self.assertIn("done", json.dumps(final))
+            self.assertTrue(final["terminal"])
+            self.assertEqual(len(client.prompt_requests), 1)
 
 
 if __name__ == "__main__":
