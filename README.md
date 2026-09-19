@@ -1,67 +1,200 @@
+<div align="center">
+
 # DSH CLI Session
 
-DSH CLI Session is a Codex plugin and loopback-only MCP server for interacting with an already-running DeepSeek Harness (DSH) web session through bounded structured tools.
+### A clean, resumable bridge between Codex and a live DeepSeek Harness session.
 
-The interface provides durable prompt correlation, incremental finalized output, compact lifecycle events, and bounded evidence reads. Internal reasoning, raw tool calls/results, and transient stream/replay payloads are not returned by the normal output feed.
+[![Release](https://img.shields.io/github/v/release/ShehabYahya/dsh-cli-session?display_name=tag&sort=semver&style=for-the-badge)](https://github.com/ShehabYahya/dsh-cli-session/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/ShehabYahya/dsh-cli-session/test.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/ShehabYahya/dsh-cli-session/actions)
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![MCP](https://img.shields.io/badge/MCP-2.2-111827?style=for-the-badge)
+![Local](https://img.shields.io/badge/DSH-loopback_only-0F766E?style=for-the-badge)
 
-## Tools
+**Send work once. Follow the exact assignment. Receive only finalized outward output. Resume safely after timeouts.**
 
-- `dsh_list_sessions`: bounded session discovery with continuation cursors.
-- `dsh_inspect_session`: compact exact-session or assignment state.
-- `dsh_add_project`: register an existing local project/workspace.
-- `dsh_new_session`: create an ordinary DSH session.
-- `dsh_send_prompt`: send one prompt with durable request correlation.
-- `dsh_wait_output`: wait for new finalized output/lifecycle events without sending or steering work.
-- `dsh_read_evidence`: read a bounded continuation of assignment-owned output or an explicitly published deliverable.
+</div>
 
-The MCP server uses the local DSH API at `http://127.0.0.1:3080` by default and refuses non-loopback base URLs. Browser-session credentials remain local and are never accepted as tool arguments.
+---
 
-## Correlation and incremental output
+DSH CLI Session is a Codex plugin + MCP server for working with an already-running [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) session without scraping giant transcripts or polling with ad-hoc scripts.
 
-`dsh_send_prompt` returns an `assignmentId`, native `requestId`, and signed cursor. A caller-provided `submission_key` makes retries of the same logical submission resolve to the same assignment/native request. Reusing that key with a different session or payload fails.
+It gives the host a durable assignment handle, a resumable cursor, compact lifecycle state, and bounded evidence reads. The plugin deliberately keeps DSH's internal reasoning and raw tool traffic out of the normal model-visible feed.
 
-A transport outage after prompt admission can return `admission_unknown` while preserving the assignment/native request identity. Retrying the same logical submission uses the same `submission_key` and payload.
+## Why this exists
 
-`dsh_wait_output` accepts the assignment and cursor and returns an ordered bounded batch plus a replacement cursor. `hasMore` indicates additional already-available output. A repeated cursor is replayable and uses stable event IDs.
+Long-running agent sessions are useful, but supervising them from another model gets expensive fast if every check means rereading large transcripts, logs, diffs, or tool traces.
 
-The compatibility baseline is wait-based delivery through ordinary MCP tool results. The plugin does not claim unsolicited host wakeup or model-visible push.
+DSH CLI Session turns that into a small stateful interface:
 
-## Repository layout
+```mermaid
+flowchart LR
+    H["Codex / host model"] -->|"dsh_send_prompt"| M["DSH CLI Session MCP"]
+    M -->|"stable requestId"| D["Live DSH session"]
+    D -->|"finalized assistant messages"| F["Output-only projection"]
+    D -->|"retry / child / terminal / evidence events"| F
+    F -->|"items + cursor"| H
 
-- `plugins/dsh-cli-session/scripts/dsh_mcp_server.py`: MCP stdio server.
-- `plugins/dsh-cli-session/skills/dsh-cli-session/scripts/dsh_cli_session.py`: compatibility facade and manual CLI fallback.
-- `dsh_transport.py`: loopback Remote transport and exact session metadata.
-- `dsh_store.py`: durable assignment/idempotency state and signed cursors.
-- `dsh_history.py`: bounded durable journal reads and event helpers.
-- `dsh_projection.py`: finalized output/lifecycle reducer.
-- `dsh_wait.py`: resumable wait and compact inspection.
-- `dsh_evidence.py`: assignment-owned bounded evidence reads.
-- `dsh_discovery.py`: bounded session discovery pagination.
-- `plugins/dsh-cli-session/skills/dsh-cli-session/SKILL.md`: tool usage and technical semantics.
-- `tests/test_supervision.py`: isolated deterministic regression/integration fixtures; no live model/provider calls.
-- `docs/NATIVE_CONTRACT.md`: DSH native identity/history contract used by the adapter.
-- `docs/MIGRATION.md`: migration notes from the original prompt-prefix waiter.
+    D -. "reasoning" .-> X["not forwarded"]
+    D -. "raw tool calls/results" .-> X
+    D -. "stream/replay payloads" .-> X
+```
+
+### What you get
+
+| Capability | What it means |
+| --- | --- |
+| **Exact assignment correlation** | Responses are tied to DSH's native request identity, not prompt-prefix guessing. |
+| **Incremental output** | Read only what appeared after your last cursor. |
+| **Lossless resume** | Large messages are chunked and resumable with signed cursors. |
+| **Timeout-safe observation** | A watcher timeout does not magically become task failure. |
+| **Retry-safe admission** | Ambiguous send outcomes preserve the same assignment/request identity. |
+| **Compact lifecycle signals** | Retry, waiting-for-input, child state, completion, failure, blocking, cancellation, and evidence remain distinct. |
+| **Bounded evidence reads** | Read only assignment-owned published messages/files instead of arbitrary large paths. |
+| **Local-only transport** | DSH credentials stay local; non-loopback DSH endpoints are refused. |
+
+## Quick start
+
+### 1. Prerequisites
+
+- Python 3.11+
+- a local DeepSeek Harness web session
+- Codex / ChatGPT Desktop with plugin support
+- the local DSH service available at `http://127.0.0.1:3080` unless you configure another loopback address
+
+### 2. Add this repository as a plugin marketplace
+
+```bash
+codex plugin marketplace add ShehabYahya/dsh-cli-session
+```
+
+Then restart ChatGPT Desktop, open the plugin directory, select the marketplace, and install **DSH CLI Session**.
+
+This repository follows the Codex marketplace layout in `.agents/plugins/marketplace.json`. See the official OpenAI plugin packaging guide for the current marketplace flow: https://developers.openai.com/plugins/build/plugins
+
+### 3. Use it naturally
+
+Examples:
+
+```text
+Use my running DSH session to work on this.
+```
+
+```text
+Send this prompt to the DSH session and show me new output as it arrives.
+```
+
+```text
+Resume the assignment from the last cursor.
+```
+
+The plugin does not prescribe how the host model should prompt, decompose work, or reason. It only exposes the session interface and its technical semantics.
+
+## Tool surface
+
+| Tool | Purpose |
+| --- | --- |
+| `dsh_list_sessions` | List a bounded page of local DSH sessions. |
+| `dsh_inspect_session` | Inspect one exact session or recover compact state for an assignment. |
+| `dsh_send_prompt` | Send a prompt with durable request correlation. |
+| `dsh_wait_output` | Wait for new finalized output/lifecycle events. Read-only. |
+| `dsh_read_evidence` | Read a bounded continuation of assignment-owned output or a published file. |
+| `dsh_add_project` | Register an existing local project/workspace. |
+| `dsh_new_session` | Create a DSH session. |
+
+## Failure handling
+
+```mermaid
+stateDiagram-v2
+    [*] --> Sent
+    Sent --> Accepted: DSH confirms admission
+    Sent --> AdmissionUnknown: transport outcome ambiguous
+    AdmissionUnknown --> Accepted: same submission key + same payload
+    Accepted --> Working
+    Working --> Working: provider retry / progress
+    Working --> WaitingForInput
+    WaitingForInput --> Working
+    Working --> Completed
+    Working --> Failed
+    Working --> Blocked
+    Working --> Cancelled
+
+    state "watch connection timeout" as WatchTimeout
+    Working --> WatchTimeout
+    WatchTimeout --> Working: same assignment + cursor
+```
+
+A connection timeout while **watching** does not mark the assignment failed. A timeout while **sending** may return `admission_unknown`, because DSH may already have accepted the prompt; retrying the same logical submission uses the same `submission_key` and payload.
+
+## Output contract
+
+The normal feed includes:
+
+- finalized outward assistant text;
+- compact provider-retry state;
+- waiting-for-input / resolved state;
+- child/workflow lifecycle signals;
+- published evidence references;
+- terminal execution state.
+
+The normal feed excludes:
+
+- internal reasoning;
+- raw tool calls;
+- raw tool results;
+- transient assistant stream/replay payloads;
+- raw provider failure messages.
+
+Unknown future assistant content types fail closed as compact `unsupported_content` signals instead of dumping opaque payloads.
+
+## Security model
+
+- DSH endpoints must resolve to loopback: `127.0.0.1`, `localhost`, or `::1`.
+- Browser-session credentials are read locally from DSH state and are never accepted as MCP tool arguments.
+- Cursor tokens are HMAC-signed and assignment-bound.
+- Evidence reads are assignment-owned and bounded.
+- Published relative artifact paths are revalidated; current symlinks are refused.
+- Local assignment correlation state uses private file permissions where supported.
+
+## Compatibility and limits
+
+The adapter was implemented against the public DeepSeek Harness contract documented in [`docs/NATIVE_CONTRACT.md`](docs/NATIVE_CONTRACT.md). Unsupported or missing observations are reported rather than fabricated.
+
+The compatibility baseline is **wait-based delivery through ordinary MCP tool results**. This project does not claim that unsolicited MCP push wakes the host model or injects content into model context without a tool call.
 
 ## Development
 
-Compile the Python sources:
-
-```bash
-python3 -m py_compile \
-  plugins/dsh-cli-session/scripts/dsh_mcp_server.py \
-  plugins/dsh-cli-session/skills/dsh-cli-session/scripts/dsh_*.py
-```
-
-Run deterministic tests:
+Run the deterministic test suite:
 
 ```bash
 python3 -m unittest -v tests/test_supervision.py
 ```
 
-Run the MCP server from the plugin directory when the MCP Python SDK and local DSH web service are available:
+Verify the real MCP stdio contract:
 
 ```bash
-python3 plugins/dsh-cli-session/scripts/dsh_mcp_server.py
+python3 tests/test_mcp_stdio.py
 ```
 
-No paid provider/model call is required by the test suite.
+The test suite does not require paid model/provider calls.
+
+## Documentation
+
+- [Native DSH contract](docs/NATIVE_CONTRACT.md)
+- [Migration notes](docs/MIGRATION.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+
+## Release
+
+**v1.0.0** marks the first publication-ready release of the correlated, resumable, output-only DSH session bridge.
+
+See [the v1 release notes](docs/releases/v1.0.0.md).
+
+---
+
+<div align="center">
+
+Built for people who want the host model to stay focused on decisions while the session plumbing stays small, durable, and observable.
+
+</div>
