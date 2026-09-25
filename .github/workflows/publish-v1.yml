@@ -19,13 +19,7 @@ jobs:
       - name: Verify tag matches plugin version
         shell: bash
         run: |
-          VERSION="$(python - <<'PY'
-import json
-from pathlib import Path
-manifest = json.loads(Path("plugins/dsh-cli-session/.codex-plugin/plugin.json").read_text())
-print(manifest["version"])
-PY
-)"
+          VERSION="$(python -c 'import json; print(json.load(open("plugins/dsh-cli-session/.codex-plugin/plugin.json"))["version"])')"
           test "${GITHUB_REF_NAME}" = "v${VERSION}" || {
             echo "Tag ${GITHUB_REF_NAME} does not match plugin version v${VERSION}" >&2
             exit 1
