@@ -39,7 +39,7 @@ _CLIENT = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_CLIENT)
 
 
-mcp = FastMCP("DSH CLI Session")
+mcp = FastMCP("LeanCodex")
 
 
 class SessionDescriptor(TypedDict, total=False):

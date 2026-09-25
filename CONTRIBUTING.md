@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve DSH CLI Session.
+Thanks for helping improve LeanCodex.
 
 ## Before opening a pull request
 

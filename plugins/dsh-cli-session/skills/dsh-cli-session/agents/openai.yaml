@@ -1,4 +1,4 @@
 interface:
-  display_name: "DSH CLI Session"
+  display_name: "LeanCodex"
   short_description: "Access local DSH sessions through MCP tools"
   default_prompt: "Use $dsh-cli-session to access my local DSH session."
