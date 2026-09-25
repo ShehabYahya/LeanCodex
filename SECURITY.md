@@ -2,7 +2,7 @@
 
 ## Scope
 
-DSH CLI Session handles local DSH browser-session credentials, assignment identity, cursors, and model-visible output. Security reports involving credential leakage, cursor forgery, cross-assignment data exposure, path traversal, symlink races, or non-loopback transport are especially important.
+LeanCodex handles local DSH browser-session credentials, assignment identity, cursors, and model-visible output. Security reports involving credential leakage, cursor forgery, cross-assignment data exposure, path traversal, symlink races, or non-loopback transport are especially important.
 
 ## Reporting a vulnerability
 

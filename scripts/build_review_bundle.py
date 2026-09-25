@@ -249,7 +249,7 @@ def main() -> int:
         )
 
         manifest = {
-            "repository": "ShehabYahya/dsh-cli-session",
+            "repository": "ShehabYahya/LeanCodex",
             "commit": os.environ.get("GITHUB_SHA") or git("rev-parse", "HEAD"),
             "branch": os.environ.get("GITHUB_REF_NAME") or git("branch", "--show-current"),
             "base": "main",

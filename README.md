@@ -1,11 +1,11 @@
 <div align="center">
 
-# DSH CLI Session
+# LeanCodex
 
-### A clean, resumable bridge between Codex and a live DeepSeek Harness session.
+### Keep Codex focused on decisions. Let DeepSeek Harness handle the long-running work.
 
-[![Release](https://img.shields.io/github/v/release/ShehabYahya/dsh-cli-session?display_name=tag&sort=semver&style=for-the-badge)](https://github.com/ShehabYahya/dsh-cli-session/releases)
-[![CI](https://img.shields.io/github/actions/workflow/status/ShehabYahya/dsh-cli-session/test.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/ShehabYahya/dsh-cli-session/actions)
+[![Release](https://img.shields.io/github/v/release/ShehabYahya/LeanCodex?display_name=tag&sort=semver&style=for-the-badge)](https://github.com/ShehabYahya/LeanCodex/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/ShehabYahya/LeanCodex/test.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/ShehabYahya/LeanCodex/actions)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![MCP](https://img.shields.io/badge/MCP-2.2-111827?style=for-the-badge)
 ![Local](https://img.shields.io/badge/DSH-loopback_only-0F766E?style=for-the-badge)
@@ -16,7 +16,7 @@
 
 ---
 
-DSH CLI Session is a Codex plugin + MCP server for working with an already-running [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) session without scraping giant transcripts or polling with ad-hoc scripts.
+LeanCodex is a Codex plugin + MCP server for working with an already-running [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) session without scraping giant transcripts or polling with ad-hoc scripts.
 
 It gives the host a durable assignment handle, a resumable cursor, compact lifecycle state, and bounded evidence reads. The plugin deliberately keeps DSH's internal reasoning and raw tool traffic out of the normal model-visible feed.
 
@@ -24,11 +24,11 @@ It gives the host a durable assignment handle, a resumable cursor, compact lifec
 
 Long-running agent sessions are useful, but supervising them from another model gets expensive fast if every check means rereading large transcripts, logs, diffs, or tool traces.
 
-DSH CLI Session turns that into a small stateful interface:
+LeanCodex turns that into a small stateful interface:
 
 ```mermaid
 flowchart LR
-    H["Codex / host model"] -->|"dsh_send_prompt"| M["DSH CLI Session MCP"]
+    H["Codex / host model"] -->|"dsh_send_prompt"| M["LeanCodex MCP"]
     M -->|"stable requestId"| D["Live DSH session"]
     D -->|"finalized assistant messages"| F["Output-only projection"]
     D -->|"retry / child / terminal / evidence events"| F
@@ -64,10 +64,10 @@ flowchart LR
 ### 2. Add this repository as a plugin marketplace
 
 ```bash
-codex plugin marketplace add ShehabYahya/dsh-cli-session
+codex plugin marketplace add ShehabYahya/LeanCodex
 ```
 
-Then restart ChatGPT Desktop, open the plugin directory, select the marketplace, and install **DSH CLI Session**.
+Then restart ChatGPT Desktop, open the plugin directory, select the marketplace, and install **LeanCodex**.
 
 This repository follows the Codex marketplace layout in `.agents/plugins/marketplace.json`. See the official OpenAI plugin packaging guide for the current marketplace flow: https://developers.openai.com/plugins/build/plugins
 
@@ -204,9 +204,9 @@ The test suite does not require paid model/provider calls.
 
 ## Release
 
-**v1.0.0** marks the first publication-ready release of the correlated, resumable, output-only DSH session bridge.
+**v1.0.3** is the first release under the **LeanCodex** name. It keeps the existing `dsh-cli-session` compatibility surface while updating the public brand and release plumbing.
 
-See [the v1 release notes](docs/releases/v1.0.0.md).
+See [the v1.0.3 release notes](docs/releases/v1.0.3.md).
 
 ---
 

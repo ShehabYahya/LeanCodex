@@ -3,7 +3,7 @@ name: dsh-cli-session
 description: Access an already-running local DeepSeek Harness session through MCP tools.
 ---
 
-# DSH CLI Session
+# LeanCodex DSH Session Bridge
 
 Use this skill when a local `dsh web` session needs to be inspected or interacted with. The skill does not prescribe prompt wording, task decomposition, model choice, or orchestration strategy.
 

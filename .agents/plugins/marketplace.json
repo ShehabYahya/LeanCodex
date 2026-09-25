@@ -1,7 +1,7 @@
 {
   "name": "dsh-cli-session",
   "interface": {
-    "displayName": "DSH CLI Session"
+    "displayName": "LeanCodex"
   },
   "plugins": [
     {

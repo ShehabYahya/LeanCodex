@@ -1,8 +1,8 @@
 {
   "name": "dsh-cli-session",
-  "version": "1.0.2",
-  "repository": "https://github.com/ShehabYahya/dsh-cli-session",
-  "description": "A durable, resumable MCP bridge to a live local DeepSeek Harness session with correlated prompts, incremental finalized output, and bounded evidence reads.",
+  "version": "1.0.3",
+  "repository": "https://github.com/ShehabYahya/LeanCodex",
+  "description": "LeanCodex keeps Codex focused on architecture and review while delegating bounded execution to a live local DeepSeek Harness session through a durable, resumable MCP bridge.",
   "author": {
     "name": "ShehabYahya"
   },
@@ -19,9 +19,9 @@
   ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "DSH CLI Session",
-    "shortDescription": "Durable, resumable access to a live local DSH session.",
-    "longDescription": "Connect Codex to an already-running DeepSeek Harness session through exact assignment correlation, incremental finalized output, compact lifecycle state, resumable cursors, and bounded evidence reads.",
+    "displayName": "LeanCodex",
+    "shortDescription": "Lean orchestration for Codex and a live local DeepSeek Harness session.",
+    "longDescription": "Keep Codex focused on architecture, decisions, and review while DeepSeek Harness handles bounded long-running execution through exact assignment correlation, incremental finalized output, compact lifecycle state, resumable cursors, and bounded evidence reads.",
     "developerName": "ShehabYahya",
     "category": "Developer Tools",
     "capabilities": [
@@ -30,7 +30,7 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Work with my local DSH session"
+      "Use LeanCodex with my local DSH session"
     ],
     "brandColor": "#4F46E5"
   },

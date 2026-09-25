@@ -2,6 +2,17 @@
 
 All notable public releases are documented here.
 
+## [1.0.3] - 2026-09-25
+
+LeanCodex branding and release-preparation update.
+
+### Changed
+
+- rebranded the public project and plugin display surfaces from DSH CLI Session to **LeanCodex**;
+- updated repository badges, installation commands, metadata, and review-bundle identity for the renamed GitHub repository;
+- preserved the existing `dsh-cli-session` plugin/skill IDs, directories, MCP server key, tool names, and local state path for compatibility;
+- replaced the one-off v1.0.0 publisher with a tag-driven release workflow that verifies the tag matches the plugin manifest version and runs the deterministic test suite before publishing.
+
 ## [1.0.0] - 2026-09-19
 
 First publication-ready release.
