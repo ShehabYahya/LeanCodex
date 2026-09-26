@@ -13,6 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -28,20 +31,18 @@ jobs:
             echo "Missing release notes: docs/releases/${GITHUB_REF_NAME}.md" >&2
             exit 1
           }
-      - name: Install MCP contract-test dependency
+      - name: Install test dependency
         run: python -m pip install -r requirements-test.txt
-      - name: Compile supervision modules
-        run: |
-          python -m py_compile \
-            plugins/dsh-cli-session/scripts/dsh_mcp_server.py \
-            plugins/dsh-cli-session/skills/dsh-cli-session/scripts/dsh_*.py \
-            scripts/build_review_bundle.py \
-            tests/test_mcp_stdio.py \
-            tests/test_supervision.py
+      - name: Compile Python sources
+        run: python -m compileall -q plugins/dsh-cli-session scripts tests
+      - name: Check launcher syntax
+        run: node --check plugins/dsh-cli-session/scripts/launch_mcp.js
       - name: Run deterministic supervision tests
         run: python -m unittest -v tests/test_supervision.py
       - name: Verify MCP stdio contract
         run: python tests/test_mcp_stdio.py
+      - name: Verify clean install bootstrap
+        run: python tests/test_install_smoke.py
 
   release:
     needs: verify
@@ -57,7 +58,4 @@ jobs:
             echo "${GITHUB_REF_NAME} already exists"
             exit 0
           fi
-          gh release create "${GITHUB_REF_NAME}" \
-            --target "${GITHUB_SHA}" \
-            --title "${GITHUB_REF_NAME} — LeanCodex" \
-            --notes-file "docs/releases/${GITHUB_REF_NAME}.md"
+          gh release create "${GITHUB_REF_NAME}"             --target "${GITHUB_SHA}"             --title "${GITHUB_REF_NAME} — LeanCodex"             --notes-file "docs/releases/${GITHUB_REF_NAME}.md"

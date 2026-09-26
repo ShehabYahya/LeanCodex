@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -12,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "plugins" / "dsh-cli-session" / "skills" / "dsh-cli-session" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from dsh_transport import DshError, DshTransportError
+from dsh_transport import DshError, DshTransportError, choose_session, path_is_absolute
 from dsh_store import (
     admit_assignment,
     decode_cursor,
@@ -116,6 +117,14 @@ def row(session_id: str = "s1", seq: int = -1, running: bool = True, cwd: str | 
 
 
 class SupervisionTests(unittest.TestCase):
+    def test_path_matching_is_cross_platform_without_local_resolution(self) -> None:
+        self.assertTrue(path_is_absolute("/tmp/project"))
+        self.assertTrue(path_is_absolute(r"C:\\Work\\Repo"))
+        win = choose_session([row("win", cwd=r"C:\\Work\\Repo")], None, r"c:\\work\\repo\\")
+        self.assertEqual(win["sessionId"], "win")
+        posix = choose_session([row("posix", cwd="/tmp/project")], None, "/tmp/project/")
+        self.assertEqual(posix["sessionId"], "posix")
+
     def test_submission_key_reuses_exact_native_request_and_rejects_rebinding(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             home = Path(td)
@@ -678,6 +687,37 @@ class SupervisionTests(unittest.TestCase):
             self.assertLessEqual(len(retained["assignments"]), MAX_ASSIGNMENTS)
             self.assertFalse(any(key.startswith("old-terminal-") for key in retained["assignments"]))
 
+
+    def test_assignment_store_is_process_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            worker = (
+                "import sys\n"
+                "from pathlib import Path\n"
+                "sys.path.insert(0, sys.argv[2])\n"
+                "from dsh_store import prepare_assignment\n"
+                "session = {'sessionId': 's1', 'cwd': '/tmp/project', "
+                "'projections': {'asOfSeq': 0, 'values': {}}}\n"
+                "prepare_assignment(Path(sys.argv[1]), session, sys.argv[3], 'queue', sys.argv[3])\n"
+            )
+            processes = [
+                subprocess.Popen(
+                    [sys.executable, "-c", worker, str(home), str(SCRIPTS), f"process-{index}"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                for index in range(12)
+            ]
+            failures = []
+            for process in processes:
+                stdout, stderr = process.communicate(timeout=30)
+                if process.returncode != 0:
+                    failures.append((process.returncode, stdout, stderr))
+            self.assertFalse(failures, failures)
+            retained = load_store(home)
+            self.assertEqual(len(retained["assignments"]), 12)
+            self.assertEqual(len(retained["submissionKeys"]), 12)
 
 
 if __name__ == "__main__":

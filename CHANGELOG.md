@@ -2,6 +2,24 @@
 
 All notable public releases are documented here.
 
+## [1.1.0] - 2026-09-26
+
+Install and cross-platform hardening without changing the DSH supervision contract.
+
+### Fixed
+
+- added a cross-platform launcher that discovers Python 3.11+ instead of assuming a `python3` executable name;
+- added private-cache bootstrap of the pinned MCP Python SDK for clean installs;
+- made the MCP server honor `DSH_HOME` and added explicit overrides for custom DSH credentials, loopback URL, Python executable, and runtime cache;
+- added Windows inter-process locking for the assignment store;
+- delegated project/session path existence validation to DSH and normalized CWD matching without resolving through the MCP process filesystem;
+- added Ubuntu, Windows, and macOS CI plus a clean-install smoke test that exercises the exact plugin launcher.
+
+### Compatibility
+
+- MCP tools, schemas, assignment correlation, cursor behavior, output filtering, and wait semantics are unchanged;
+- the default DSH URL remains `http://127.0.0.1:3080` and the default DSH home remains `~/.dsh`.
+
 ## [1.0.3] - 2026-09-25
 
 LeanCodex branding and release-preparation update.
