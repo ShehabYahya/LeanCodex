@@ -6,7 +6,9 @@ import base64
 import hashlib
 import hmac
 import json
-from pathlib import Path
+import ntpath
+from pathlib import Path, PurePosixPath, PureWindowsPath
+import posixpath
 import time
 import urllib.error
 import urllib.parse
@@ -38,8 +40,13 @@ def decode_secret(value: str) -> bytes:
         raise DshError("browser-session secret is not 32 bytes")
     return raw
 
-def read_secret(dsh_home: Path) -> bytes:
-    path = dsh_home / ".credentials.yaml"
+def read_secret(dsh_home: Path, credentials_file: str | None = None) -> bytes:
+    if credentials_file:
+        path = Path(credentials_file).expanduser()
+        if not path.is_absolute():
+            raise DshError("LEANCODEX_CREDENTIALS_FILE must be an absolute local path")
+    else:
+        path = dsh_home / ".credentials.yaml"
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -184,6 +191,22 @@ def _bounded_candidates(items: list[dict[str, Any]], maximum: int = 5) -> str:
         detail += f"; … {len(items) - maximum} more"
     return detail
 
+def path_is_absolute(value: str) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    return PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
+
+
+def _cwd_key(value: Any) -> tuple[str, str] | None:
+    if not isinstance(value, str):
+        return None
+    if PureWindowsPath(value).is_absolute():
+        return ("windows", ntpath.normcase(ntpath.normpath(value)))
+    if PurePosixPath(value).is_absolute():
+        return ("posix", posixpath.normpath(value))
+    return ("raw", value)
+
+
 def choose_session(items: list[dict[str, Any]], session_id: str | None, cwd: str | None) -> dict[str, Any]:
     if session_id is not None:
         matches = [item for item in items if item.get("sessionId") == session_id]
@@ -193,7 +216,8 @@ def choose_session(items: list[dict[str, Any]], session_id: str | None, cwd: str
 
     candidates = [item for item in items if item.get("running") is True]
     if cwd is not None:
-        candidates = [item for item in candidates if item.get("cwd") == cwd]
+        requested_cwd = _cwd_key(cwd)
+        candidates = [item for item in candidates if _cwd_key(item.get("cwd")) == requested_cwd]
     if len(candidates) != 1:
         visible = candidates or items
         detail = _bounded_candidates(visible)

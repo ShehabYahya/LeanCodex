@@ -35,3 +35,7 @@ The current release is designed to:
 - exclude internal reasoning and raw tool traffic from the normal output feed.
 
 See [`docs/NATIVE_CONTRACT.md`](docs/NATIVE_CONTRACT.md) for the protocol assumptions behind these properties.
+
+## Runtime dependency bootstrap
+
+The local launcher requires Python 3.11+ and pins the MCP SDK in `plugins/dsh-cli-session/requirements.txt`. If the selected Python does not already provide that exact MCP version, the launcher uses that Python's pip to install dependencies into LeanCodex's private cache. It does not install into the selected interpreter's site-packages. Set `LEANCODEX_RUNTIME_DIR` to control the cache location or preinstall the pinned dependency to avoid bootstrap network access.

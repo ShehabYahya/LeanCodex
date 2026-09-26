@@ -16,8 +16,13 @@ from typing import Any, Iterator
 
 try:
     import fcntl
-except ImportError:  # pragma: no cover - non-POSIX fallback
+except ImportError:  # pragma: no cover - non-POSIX
     fcntl = None  # type: ignore[assignment]
+
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - non-Windows
+    msvcrt = None  # type: ignore[assignment]
 
 from dsh_transport import (
     DshClient, DshError, DshTransportError, b64url, b64url_decode, projection_seq,
@@ -125,18 +130,28 @@ def _store_guard(dsh_home: Path) -> Iterator[None]:
         pass
     lock_path = directory / ".assignments.lock"
     with _STORE_LOCK:
-        with lock_path.open("a+", encoding="utf-8") as handle:
+        with lock_path.open("a+b") as handle:
             try:
                 os.chmod(lock_path, 0o600)
             except OSError:
                 pass
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"\0")
+                handle.flush()
+            handle.seek(0)
             if fcntl is not None:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            elif msvcrt is not None:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
             try:
                 yield
             finally:
                 if fcntl is not None:
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                elif msvcrt is not None:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
 
 def load_store(dsh_home: Path) -> dict[str, Any]:
     with _store_guard(dsh_home):

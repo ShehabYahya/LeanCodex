@@ -56,7 +56,8 @@ flowchart LR
 
 ### 1. Prerequisites
 
-- Python 3.11+
+- Node.js (the standard DeepSeek Harness install already requires it)
+- Python 3.11+ with pip
 - a local DeepSeek Harness web session
 - Codex / ChatGPT Desktop with plugin support
 - the local DSH service available at `http://127.0.0.1:3080` unless you configure another loopback address
@@ -68,6 +69,18 @@ codex plugin marketplace add ShehabYahya/LeanCodex
 ```
 
 Then restart ChatGPT Desktop, open the plugin directory, select the marketplace, and install **LeanCodex**.
+
+On first MCP startup, LeanCodex locates Python 3.11+ using `py -3` / `python3` / `python` as appropriate. If that Python does not already provide the pinned MCP SDK, LeanCodex installs it into a private per-user runtime cache; it does not modify the selected Python environment.
+
+The defaults still match a normal DSH Web install, so most users configure nothing. Non-default installations can use these environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `DSH_HOME` | DSH home instead of `~/.dsh`. |
+| `LEANCODEX_CREDENTIALS_FILE` | Absolute path to a custom DSH `.credentials.yaml`. |
+| `LEANCODEX_DSH_URL` | Loopback DSH Web URL instead of `http://127.0.0.1:3080`. |
+| `LEANCODEX_PYTHON` | Exact Python 3.11+ executable to use. |
+| `LEANCODEX_RUNTIME_DIR` | Override the private dependency-cache directory. |
 
 This repository follows the Codex marketplace layout in `.agents/plugins/marketplace.json`. See the official OpenAI plugin packaging guide for the current marketplace flow: https://developers.openai.com/plugins/build/plugins
 
@@ -183,13 +196,14 @@ The compatibility baseline is **wait-based delivery through ordinary MCP tool re
 Run the deterministic test suite:
 
 ```bash
-python3 -m unittest -v tests/test_supervision.py
+python -m unittest -v tests/test_supervision.py
 ```
 
 Verify the real MCP stdio contract:
 
 ```bash
-python3 tests/test_mcp_stdio.py
+python tests/test_mcp_stdio.py
+python tests/test_install_smoke.py
 ```
 
 The test suite does not require paid model/provider calls.
@@ -204,9 +218,9 @@ The test suite does not require paid model/provider calls.
 
 ## Release
 
-**v1.0.3** is the first release under the **LeanCodex** name. It keeps the existing `dsh-cli-session` compatibility surface while updating the public brand and release plumbing.
+**v1.1.0** hardens clean installation and cross-platform startup while preserving the existing `dsh-cli-session` compatibility and supervision behavior.
 
-See [the v1.0.3 release notes](docs/releases/v1.0.3.md).
+See [the v1.1.0 release notes](docs/releases/v1.1.0.md).
 
 ---
 

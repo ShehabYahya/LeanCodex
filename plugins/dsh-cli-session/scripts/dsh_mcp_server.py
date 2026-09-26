@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import os
 from pathlib import Path
 from typing import Any, Literal
 from typing_extensions import NotRequired, TypedDict
@@ -37,6 +38,9 @@ if _SPEC is None or _SPEC.loader is None:  # pragma: no cover - packaging failur
     raise RuntimeError(f"cannot load bundled DSH client: {_CLI_PATH}")
 _CLIENT = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_CLIENT)
+
+
+_DEFAULT_BASE_URL = os.environ.get("LEANCODEX_DSH_URL", "http://127.0.0.1:3080")
 
 
 mcp = FastMCP("LeanCodex")
@@ -157,12 +161,14 @@ def _tool(**kwargs: Any):
 
 
 def _home(dsh_home: str | None) -> Path:
-    return Path(dsh_home).expanduser() if dsh_home else Path.home() / ".dsh"
+    configured = dsh_home or os.environ.get("DSH_HOME")
+    return Path(configured).expanduser() if configured else Path.home() / ".dsh"
 
 
 def _client(base_url: str, dsh_home: str | None) -> tuple[Any, Path]:
     home = _home(dsh_home)
-    return _CLIENT.DshClient(base_url, _CLIENT.read_secret(home)), home
+    credentials_file = os.environ.get("LEANCODEX_CREDENTIALS_FILE")
+    return _CLIENT.DshClient(base_url, _CLIENT.read_secret(home, credentials_file)), home
 
 
 def _raise(exc: Exception) -> None:
@@ -170,12 +176,12 @@ def _raise(exc: Exception) -> None:
 
 
 def _absolute_directory(value: str, label: str) -> str:
-    path = Path(value).expanduser()
-    if not path.is_absolute():
+    expanded = str(Path(value).expanduser()) if value.startswith("~") else value
+    if not _CLIENT.path_is_absolute(expanded):
         raise ValueError(f"{label} must be an absolute path")
-    if not path.is_dir():
-        raise ValueError(f"{label} must be an existing directory: {path}")
-    return str(path)
+    # DSH owns workspace validation. Do not reject a valid DSH path merely
+    # because this MCP process has a different filesystem namespace.
+    return expanded
 
 
 @_tool(annotations=_ann(read_only=True, idempotent=True))
@@ -184,7 +190,7 @@ def dsh_list_sessions(
     cursor: str | None = None,
     running_only: bool = False,
     cwd: str | None = None,
-    base_url: str = "http://127.0.0.1:3080",
+    base_url: str = _DEFAULT_BASE_URL,
     dsh_home: str | None = None,
 ) -> ListSessionsResult:
     """List a bounded page of local DSH sessions. Use the returned cursor for continuation."""
@@ -202,7 +208,7 @@ def dsh_list_sessions(
 def dsh_inspect_session(
     session_id: str | None = None,
     assignment_id: str | None = None,
-    base_url: str = "http://127.0.0.1:3080",
+    base_url: str = _DEFAULT_BASE_URL,
     dsh_home: str | None = None,
 ) -> InspectSessionResult:
     """Inspect one exact session or resume one known assignment without returning full history."""
@@ -224,7 +230,7 @@ def dsh_inspect_session(
 @_tool(annotations=_ann(read_only=False, idempotent=True))
 def dsh_add_project(
     path: str,
-    base_url: str = "http://127.0.0.1:3080",
+    base_url: str = _DEFAULT_BASE_URL,
     dsh_home: str | None = None,
 ) -> AddProjectResult:
     """Register an existing local directory as a DSH project/workspace."""
@@ -244,7 +250,7 @@ def dsh_new_session(
     workspace_id: str | None = None,
     cwd: str | None = None,
     agent_preset: str | None = None,
-    base_url: str = "http://127.0.0.1:3080",
+    base_url: str = _DEFAULT_BASE_URL,
     dsh_home: str | None = None,
 ) -> NewSessionResult:
     """Create a new ordinary DSH session in a project or absolute working directory."""
@@ -278,7 +284,7 @@ def dsh_send_prompt(
     mode: Literal["queue", "steer"] = "steer",
     submission_key: str | None = None,
     wait_seconds: int = 0,
-    base_url: str = "http://127.0.0.1:3080",
+    base_url: str = _DEFAULT_BASE_URL,
     dsh_home: str | None = None,
 ) -> SendPromptResult:
     """Send a prompt to one DSH session with durable request correlation; steer is the default."""
@@ -353,7 +359,7 @@ async def dsh_wait_output(
     max_items: int = 8,
     max_message_chars: int = 6000,
     max_batch_chars: int = 12000,
-    base_url: str = "http://127.0.0.1:3080",
+    base_url: str = _DEFAULT_BASE_URL,
     dsh_home: str | None = None,
 ) -> WaitOutputResult:
     """Wait using one explicit policy while returning common state/terminal/timeout signals."""
@@ -382,7 +388,7 @@ def dsh_read_evidence(
     start: int = 0,
     max_chars: int = 6000,
     expected_sha256: str | None = None,
-    base_url: str = "http://127.0.0.1:3080",
+    base_url: str = _DEFAULT_BASE_URL,
     dsh_home: str | None = None,
 ) -> EvidenceResult:
     """Read a bounded continuation of an assignment-owned output block or published file."""

@@ -9,12 +9,11 @@ Please keep changes focused and explain the user-visible behavior they affect. F
 ## Local checks
 
 ```bash
-python3 -m py_compile \
-  plugins/dsh-cli-session/scripts/dsh_mcp_server.py \
-  plugins/dsh-cli-session/skills/dsh-cli-session/scripts/dsh_*.py
-
-python3 -m unittest -v tests/test_supervision.py
-python3 tests/test_mcp_stdio.py
+python -m compileall -q plugins/dsh-cli-session scripts tests
+node --check plugins/dsh-cli-session/scripts/launch_mcp.js
+python -m unittest -v tests/test_supervision.py
+python tests/test_mcp_stdio.py
+python tests/test_install_smoke.py
 ```
 
 The deterministic suite should not require paid model/provider calls.

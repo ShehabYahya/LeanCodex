@@ -4,9 +4,16 @@
       "title": "LeanCodex",
       "description": "LeanCodex bridge for bounded, resumable access to an already-running local DeepSeek Harness session.",
       "cwd": ".",
-      "command": "python3",
+      "command": "node",
       "args": [
-        "./scripts/dsh_mcp_server.py"
+        "./scripts/launch_mcp.js"
+      ],
+      "env_vars": [
+        "DSH_HOME",
+        "LEANCODEX_CREDENTIALS_FILE",
+        "LEANCODEX_DSH_URL",
+        "LEANCODEX_PYTHON",
+        "LEANCODEX_RUNTIME_DIR"
       ]
     }
   }

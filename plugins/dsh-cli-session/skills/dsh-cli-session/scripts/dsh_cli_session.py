@@ -48,8 +48,9 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--mode", choices=("queue", "steer"), default="steer")
     p.add_argument("--submission-key", help="stable caller retry key")
     p.add_argument("--wait", type=int, default=0, metavar="SECONDS", help="wait for the assignment terminal state")
-    p.add_argument("--base-url", default="http://127.0.0.1:3080")
+    p.add_argument("--base-url", default=os.environ.get("LEANCODEX_DSH_URL", "http://127.0.0.1:3080"))
     p.add_argument("--dsh-home", default=os.environ.get("DSH_HOME", str(Path.home() / ".dsh")))
+    p.add_argument("--credentials-file", default=os.environ.get("LEANCODEX_CREDENTIALS_FILE"))
     p.add_argument("--json", action="store_true", help="emit machine-readable output")
     p.add_argument("--dry-run", action="store_true", help="select and display the target without sending")
     return p
@@ -58,7 +59,7 @@ def main() -> int:
     args = parser().parse_args()
     home = Path(args.dsh_home).expanduser()
     try:
-        secret = read_secret(home)
+        secret = read_secret(home, args.credentials_file)
         client = DshClient(args.base_url, secret)
         if args.list:
             result = paginate_sessions(client, secret)
