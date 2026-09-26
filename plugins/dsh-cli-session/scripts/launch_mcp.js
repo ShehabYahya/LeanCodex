@@ -85,22 +85,18 @@ function requiredMcpVersion() {
   return match[1];
 }
 
-function withPythonPath(env, extra) {
-  return {
-    ...env,
-    PYTHONPATH: env.PYTHONPATH
-      ? `${extra}${path.delimiter}${env.PYTHONPATH}`
-      : extra,
-  };
-}
-
-function installedMcpVersion(python, env) {
-  const code =
-    'import importlib.metadata; print(importlib.metadata.version("mcp"))';
+function installedMcpVersion(python, siteDir = "") {
+  const code = [
+    "import importlib.metadata, site, sys",
+    "target = sys.argv[1]",
+    "if target: site.addsitedir(target)",
+    "import mcp",
+    'print(importlib.metadata.version("mcp"))',
+  ].join("\n");
   const result = spawnSync(
     python.command,
-    [...python.prefix, "-c", code],
-    { encoding: "utf8", env, windowsHide: true }
+    [...python.prefix, "-c", code, siteDir],
+    { encoding: "utf8", windowsHide: true }
   );
   return result.status === 0 ? result.stdout.trim() : null;
 }
@@ -146,16 +142,13 @@ function cachedRuntimeDir(python) {
 
 function ensureRuntime(python) {
   const required = requiredMcpVersion();
-  const baseEnv = { ...process.env };
-
-  if (installedMcpVersion(python, baseEnv) === required) {
-    return { env: baseEnv, source: "environment" };
+  if (installedMcpVersion(python) === required) {
+    return { siteDir: null, source: "environment" };
   }
 
   const target = cachedRuntimeDir(python);
-  const targetEnv = withPythonPath(baseEnv, target);
-  if (installedMcpVersion(python, targetEnv) === required) {
-    return { env: targetEnv, source: target };
+  if (installedMcpVersion(python, target) === required) {
+    return { siteDir: target, source: target };
   }
 
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -207,35 +200,32 @@ function ensureRuntime(python) {
     );
   }
 
-  const tempEnv = withPythonPath(baseEnv, temp);
-  if (installedMcpVersion(python, tempEnv) !== required) {
+  if (installedMcpVersion(python, temp) !== required) {
     fs.rmSync(temp, { recursive: true, force: true });
     fail("the freshly installed MCP runtime could not be imported.");
   }
 
   try {
     if (fs.existsSync(target)) {
-      const existingEnv = withPythonPath(baseEnv, target);
-      if (installedMcpVersion(python, existingEnv) === required) {
+      if (installedMcpVersion(python, target) === required) {
         fs.rmSync(temp, { recursive: true, force: true });
-        return { env: existingEnv, source: target };
+        return { siteDir: target, source: target };
       }
       fs.rmSync(target, { recursive: true, force: true });
     }
     fs.renameSync(temp, target);
   } catch (error) {
     if (fs.existsSync(target)) {
-      const existingEnv = withPythonPath(baseEnv, target);
-      if (installedMcpVersion(python, existingEnv) === required) {
+      if (installedMcpVersion(python, target) === required) {
         fs.rmSync(temp, { recursive: true, force: true });
-        return { env: existingEnv, source: target };
+        return { siteDir: target, source: target };
       }
     }
     fs.rmSync(temp, { recursive: true, force: true });
     fail("could not finalize the private MCP runtime cache.", String(error));
   }
 
-  return { env: withPythonPath(baseEnv, target), source: target };
+  return { siteDir: target, source: target };
 }
 
 const python = findPython();
@@ -248,11 +238,25 @@ if (process.env.LEANCODEX_BOOTSTRAP_ONLY === "1") {
   process.exit(0);
 }
 
+const serverArgs = runtime.siteDir
+  ? [
+      ...python.prefix,
+      "-c",
+      [
+        "import runpy, site, sys",
+        "site.addsitedir(sys.argv[1])",
+        'runpy.run_path(sys.argv[2], run_name="__main__")',
+      ].join("; "),
+      runtime.siteDir,
+      SERVER,
+    ]
+  : [...python.prefix, SERVER];
+
 const child = spawn(
   python.command,
-  [...python.prefix, SERVER],
+  serverArgs,
   {
-    env: runtime.env,
+    env: process.env,
     stdio: "inherit",
     windowsHide: true,
   }
