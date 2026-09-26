@@ -31,6 +31,7 @@ BANNED_BEHAVIOR_SHAPING = [
 EXPECTED = {
     "dsh_list_sessions",
     "dsh_inspect_session",
+    "dsh_inspect_assignment",
     "dsh_add_project",
     "dsh_new_session",
     "dsh_send_prompt",
@@ -57,6 +58,12 @@ async def run_contract() -> None:
         assert {"assignment_id", "after_cursor", "kind", "timeout_s", "max_items"} <= set(wait_props)
         assert wait_props["kind"].get("default") == "time_limit"
         assert set(wait_props["kind"].get("enum", [])) == {"waiting_for_input", "time_limit"}
+        inspect = tools["dsh_inspect_session"]
+        inspect_props = inspect.input_schema.get("properties", {})
+        assert set(inspect.input_schema.get("required", [])) == {"session_id"}
+        assert set(inspect_props) == {"session_id", "base_url", "dsh_home"}
+        assignment_inspect = tools["dsh_inspect_assignment"]
+        assert set(assignment_inspect.input_schema.get("required", [])) == {"assignment_id"}
         send_props = tools["dsh_send_prompt"].input_schema.get("properties", {})
         assert "submission_key" in send_props
         assert send_props["mode"].get("default") == "steer"

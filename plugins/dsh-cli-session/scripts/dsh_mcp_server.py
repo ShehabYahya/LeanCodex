@@ -66,8 +66,12 @@ class ListSessionsResult(TypedDict):
 
 class InspectSessionResult(TypedDict):
     ok: bool
-    session: NotRequired[SessionDescriptor]
-    assignment: NotRequired[dict[str, Any]]
+    session: SessionDescriptor
+
+
+class InspectAssignmentResult(TypedDict):
+    ok: bool
+    assignment: dict[str, Any]
 
 
 class AddProjectResult(TypedDict):
@@ -206,23 +210,33 @@ def dsh_list_sessions(
 
 @_tool(annotations=_ann(read_only=True, idempotent=True))
 def dsh_inspect_session(
-    session_id: str | None = None,
-    assignment_id: str | None = None,
+    session_id: str,
     base_url: str = _DEFAULT_BASE_URL,
     dsh_home: str | None = None,
 ) -> InspectSessionResult:
-    """Inspect one exact session or resume one known assignment without returning full history."""
+    """Inspect any exact DSH session by ID; no task, assignment, or cursor is required."""
     try:
-        client, home = _client(base_url, dsh_home)
-        if assignment_id is not None:
-            result = _CLIENT.inspect_assignment(client, home, assignment_id)
-            if session_id is not None and result["sessionId"] != session_id:
-                raise _CLIENT.DshError("assignment does not belong to the supplied session_id")
-            return {"ok": True, "assignment": result}
-        if session_id is None:
-            raise _CLIENT.DshError("session_id or assignment_id is required")
+        client, _ = _client(base_url, dsh_home)
         item = _CLIENT.choose_session(_CLIENT.sessions(client), session_id, None)
         return {"ok": True, "session": _CLIENT.describe(item)}
+    except _CLIENT.DshError as exc:
+        _raise(exc)
+
+
+@_tool(annotations=_ann(read_only=True, idempotent=True))
+def dsh_inspect_assignment(
+    assignment_id: str,
+    session_id: str | None = None,
+    base_url: str = _DEFAULT_BASE_URL,
+    dsh_home: str | None = None,
+) -> InspectAssignmentResult:
+    """Inspect compact state for an assignment created through this bridge."""
+    try:
+        client, home = _client(base_url, dsh_home)
+        result = _CLIENT.inspect_assignment(client, home, assignment_id)
+        if session_id is not None and result["sessionId"] != session_id:
+            raise _CLIENT.DshError("assignment does not belong to the supplied session_id")
+        return {"ok": True, "assignment": result}
     except _CLIENT.DshError as exc:
         _raise(exc)
 

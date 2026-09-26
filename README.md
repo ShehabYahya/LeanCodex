@@ -124,7 +124,8 @@ Global routing selects the workflow in future sessions; it does not authorize un
 | Tool | Purpose |
 | --- | --- |
 | `dsh_list_sessions` | List a bounded page of local DSH sessions. |
-| `dsh_inspect_session` | Inspect one exact session or recover compact state for an assignment. |
+| `dsh_inspect_session` | Inspect any exact session by `session_id`; no task or assignment is required. |
+| `dsh_inspect_assignment` | Recover compact state for an assignment created through this bridge. |
 | `dsh_send_prompt` | Send a prompt with durable request correlation. |
 | `dsh_wait_output` | Wait for new finalized output/lifecycle events. Read-only. |
 | `dsh_read_evidence` | Read a bounded continuation of assignment-owned output or a published file. |

@@ -10,7 +10,8 @@ Use this skill when a local `dsh web` session needs to be inspected or interacte
 ## Tools
 
 - `dsh_list_sessions`: list a bounded page of local DSH sessions.
-- `dsh_inspect_session`: inspect one exact session or recover compact state for a known assignment.
+- `dsh_inspect_session`: inspect any listed session by its exact `session_id`; this is read-only and does not require a task, assignment, submission key, or cursor.
+- `dsh_inspect_assignment`: recover compact state for an assignment created through this bridge.
 - `dsh_send_prompt`: send a prompt to one DSH session with durable request correlation.
 - `dsh_wait_output`: wait for an assignment notification using `kind="waiting_for_input"` or `kind="time_limit"`.
 - `dsh_read_evidence`: read a bounded continuation of an assignment-owned message or published file.
@@ -19,6 +20,7 @@ Use this skill when a local `dsh web` session needs to be inspected or interacte
 
 ## Technical semantics
 
+- For an unowned session, call `dsh_list_sessions`, select its `sessionId`, then call `dsh_inspect_session(session_id=...)`. Do not ask for or invent an assignment ID.
 - `steer` is the default send mode; it targets the active turn. Use `queue` explicitly when work must wait for the next turn.
 - `submission_key` identifies a logical submission. Reusing the same key with the same session and payload resolves to the same assignment/native request. Reusing it with a different binding is an error.
 - `accepted: true` means DSH acknowledged prompt admission. `admission_unknown` means the transport outcome was ambiguous; retrying the same logical submission requires the same `submission_key` and identical payload, or the existing `assignmentId` can be inspected.
